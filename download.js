@@ -38,8 +38,40 @@
         return 'video';
     }
 
+    function getAndroidMethods() {
+        if (typeof Android === 'undefined') return [];
+        var methods = [];
+        for (var key in Android) {
+            if (typeof Android[key] === 'function') methods.push(key);
+        }
+        return methods;
+    }
+
     function hasAndroid() {
-        return typeof Android !== 'undefined' && Android.openPlayer;
+        return typeof Android !== 'undefined';
+    }
+
+    function openExternal(url, title) {
+        if (typeof Android === 'undefined') return false;
+
+        // Try different methods
+        if (Android.openPlayer) {
+            Android.openPlayer(url, JSON.stringify({ title: title }));
+            return true;
+        }
+        if (Android.openInBrowser) {
+            Android.openInBrowser(url);
+            return true;
+        }
+        if (Android.openBrowser) {
+            Android.openBrowser(url);
+            return true;
+        }
+        if (Android.share) {
+            Android.share(url, title);
+            return true;
+        }
+        return false;
     }
 
     function showMenu() {
@@ -68,8 +100,13 @@
 
                 if (item.id === 'external') {
                     try {
-                        Android.openPlayer(url, JSON.stringify({ title: title }));
-                        Lampa.Noty.show('Choose Seal or YTDLnis');
+                        var opened = openExternal(url, title);
+                        if (opened) {
+                            Lampa.Noty.show('Choose Seal or YTDLnis');
+                        } else {
+                            copyToClipboard(url);
+                            Lampa.Noty.show('No method found. URL copied!');
+                        }
                     } catch (e) {
                         copyToClipboard(url);
                         Lampa.Noty.show('Error: ' + e.message + '. URL copied!');
@@ -116,8 +153,16 @@
 
         // Log Android availability after delay
         setTimeout(function() {
+            var methods = getAndroidMethods();
             console.log('[DLHelper] Android available:', hasAndroid());
-        }, 2000);
+            console.log('[DLHelper] Android methods:', methods.join(', '));
+            // Show notification with available methods
+            if (hasAndroid()) {
+                Lampa.Noty.show('[DLHelper] Android: ' + methods.slice(0, 5).join(', '));
+            } else {
+                Lampa.Noty.show('[DLHelper] No Android bridge');
+            }
+        }, 3000);
     }
 
     if (!window.lampa_download_helper) startPlugin();
