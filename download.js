@@ -38,37 +38,10 @@
         return 'video';
     }
 
-    function getAndroidMethods() {
-        if (typeof Android === 'undefined') return [];
-        var methods = [];
-        for (var key in Android) {
-            if (typeof Android[key] === 'function') methods.push(key);
-        }
-        return methods;
-    }
-
-    function hasAndroid() {
-        return typeof Android !== 'undefined';
-    }
-
     function openExternal(url, title) {
-        if (typeof Android === 'undefined') return false;
-
-        // Try different methods
-        if (Android.openPlayer) {
-            Android.openPlayer(url, JSON.stringify({ title: title }));
-            return true;
-        }
-        if (Android.openInBrowser) {
-            Android.openInBrowser(url);
-            return true;
-        }
-        if (Android.openBrowser) {
-            Android.openBrowser(url);
-            return true;
-        }
-        if (Android.share) {
-            Android.share(url, title);
+        // Use Lampa.Android.openPlayer
+        if (Lampa.Android && Lampa.Android.openPlayer) {
+            Lampa.Android.openPlayer(url, title);
             return true;
         }
         return false;
@@ -82,7 +55,7 @@
         }
 
         var title = getTitle();
-        var androidAvailable = hasAndroid();
+        var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
 
         var items = [];
 
@@ -151,30 +124,6 @@
             });
         }
 
-        // Log available APIs
-        setTimeout(function() {
-            // Check Lampa.Platform methods
-            if (Lampa.Platform) {
-                var platformMethods = [];
-                for (var k in Lampa.Platform) {
-                    platformMethods.push(k);
-                }
-                console.log('[DLHelper] Platform:', platformMethods.join(', '));
-                Lampa.Noty.show('[DLHelper] Platform: ' + platformMethods.slice(0, 6).join(', '));
-            }
-
-            // Check Lampa.Android methods
-            setTimeout(function() {
-                if (Lampa.Android) {
-                    var androidMethods = [];
-                    for (var k in Lampa.Android) {
-                        androidMethods.push(k);
-                    }
-                    console.log('[DLHelper] Lampa.Android:', androidMethods.join(', '));
-                    Lampa.Noty.show('[DLHelper] Android: ' + androidMethods.slice(0, 6).join(', '));
-                }
-            }, 2000);
-        }, 3000);
     }
 
     if (!window.lampa_download_helper) startPlugin();
