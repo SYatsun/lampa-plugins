@@ -151,17 +151,24 @@
             });
         }
 
-        // Log Android availability after delay
+        // Log available APIs
         setTimeout(function() {
-            var methods = getAndroidMethods();
-            console.log('[DLHelper] Android available:', hasAndroid());
-            console.log('[DLHelper] Android methods:', methods.join(', '));
-            // Show notification with available methods
-            if (hasAndroid()) {
-                Lampa.Noty.show('[DLHelper] Android: ' + methods.slice(0, 5).join(', '));
-            } else {
-                Lampa.Noty.show('[DLHelper] No Android bridge');
-            }
+            var lampaKeys = Object.keys(Lampa).join(', ');
+            console.log('[DLHelper] Lampa keys:', lampaKeys);
+
+            // Check for Platform or Android-related Lampa APIs
+            var platformInfo = [];
+            if (Lampa.Platform) platformInfo.push('Platform');
+            if (Lampa.Android) platformInfo.push('Android');
+            if (Lampa.Device) platformInfo.push('Device');
+            if (Lampa.Utils && Lampa.Utils.openPlayer) platformInfo.push('Utils.openPlayer');
+
+            Lampa.Noty.show('[DLHelper] Lampa: ' + (platformInfo.length ? platformInfo.join(', ') : 'checking...'));
+
+            // Show first 10 Lampa keys
+            setTimeout(function() {
+                Lampa.Noty.show('[DLHelper] Keys: ' + Object.keys(Lampa).slice(0, 8).join(', '));
+            }, 2000);
         }, 3000);
     }
 
