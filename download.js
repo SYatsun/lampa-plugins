@@ -154,12 +154,34 @@
     }
 
     function showPlayerMenu() {
-        var url = getVideoUrl();
+        // First check if we have captured URLs with multiple qualities
+        if (capturedUrls.length > 1) {
+            var items = capturedUrls.map(function(u) {
+                return { title: u.label || u.quality || 'Video', url: u.url };
+            });
+
+            Lampa.Select.show({
+                title: 'Вибери якість',
+                items: items,
+                onSelect: function(sel) {
+                    Lampa.Select.close();
+                    showDownloadMenu(sel.url, sel.title, true);
+                },
+                onBack: function() { Lampa.Controller.toggle('player'); },
+                _dlHelper: true
+            });
+            return;
+        }
+
+        // Single URL from capturedUrls or get current playing URL
+        var url = (capturedUrls.length === 1) ? capturedUrls[0].url : getVideoUrl();
+        var quality = (capturedUrls.length === 1) ? (capturedUrls[0].quality || capturedUrls[0].label || '') : '';
+
         if (!url) {
             Lampa.Noty.show('No URL. Start playing first!');
             return;
         }
-        showDownloadMenu(url, '', true);
+        showDownloadMenu(url, quality, true);
     }
 
     function addPlayerButton() {
