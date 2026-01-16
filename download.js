@@ -315,12 +315,18 @@
     function startPlugin() {
         window.lampa_download_helper = true;
 
-        // Capture card
+        // Capture card and reset streams on new content
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite') setTimeout(addPlayerButton, 500);
             try {
                 var a = Lampa.Activity.active();
-                if (a && a.card) savedCard = a.card;
+                if (a && a.card) {
+                    // If different card, reset captured streams
+                    if (!savedCard || savedCard.id !== a.card.id) {
+                        capturedStreams = null;
+                    }
+                    savedCard = a.card;
+                }
             } catch(e) {}
         });
 
@@ -343,20 +349,24 @@
                 var menuTitle = (params.title || '').toLowerCase();
                 var isActionMenu = menuTitle.indexOf('действие') > -1 || menuTitle.indexOf('action') > -1;
 
-                // Extract streams from menu items
+                // Only extract streams from menus that look like quality selectors
+                // (items with file() functions that return URLs)
                 var streams = [];
+                var hasFileFunction = false;
+
                 params.items.forEach(function(item) {
-                    // Check for file() function
+                    // Check for file() function - this is the main indicator of a quality menu
                     if (typeof item.file === 'function') {
+                        hasFileFunction = true;
                         try {
                             var result = item.file();
 
                             // Result is a direct URL string
                             if (typeof result === 'string' && result.indexOf('http') === 0) {
-                                streams.push({ url: result, quality: item.title || '' });
+                                streams.push({ url: result, quality: item.title || 'Video' });
                             }
                             // Result is an object with quality -> URL mapping
-                            else if (typeof result === 'object' && result !== null) {
+                            else if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
                                 Object.keys(result).forEach(function(quality) {
                                     var url = result[quality];
                                     if (typeof url === 'string' && url.indexOf('http') === 0) {
@@ -366,25 +376,11 @@
                             }
                         } catch(e) {}
                     }
-
-                    // Check for direct url property
-                    if (item.url && typeof item.url === 'string' && item.url.indexOf('http') === 0) {
-                        streams.push({ url: item.url, quality: item.title || '' });
-                    }
-
-                    // Check for urls object property (quality -> url mapping)
-                    if (item.urls && typeof item.urls === 'object') {
-                        Object.keys(item.urls).forEach(function(quality) {
-                            var url = item.urls[quality];
-                            if (typeof url === 'string' && url.indexOf('http') === 0) {
-                                streams.push({ url: url, quality: quality });
-                            }
-                        });
-                    }
                 });
 
-                // Store captured streams
-                if (streams.length > 0) {
+                // Only store if we found actual streams from file() functions
+                // This avoids capturing episode lists or other menus
+                if (hasFileFunction && streams.length > 0) {
                     capturedStreams = streams;
                 }
 
@@ -392,10 +388,10 @@
                 if (isActionMenu) {
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: streams.length > 0 ? streams.length + ' qualities' : 'Current only',
+                        subtitle: (capturedStreams && capturedStreams.length > 0) ? capturedStreams.length + ' qualities' : 'Current only',
                         onSelect: function() {
                             Lampa.Select.close();
-                            var toDownload = streams.length > 0 ? streams : getPlayerStreams();
+                            var toDownload = (capturedStreams && capturedStreams.length > 0) ? capturedStreams : getPlayerStreams();
                             if (toDownload.length === 0) {
                                 Lampa.Noty.show('No URLs. Play video first!');
                                 return;
