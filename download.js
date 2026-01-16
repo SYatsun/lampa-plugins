@@ -60,75 +60,129 @@
     }
 
     // ========== DOWNLOAD MENU ==========
-    function showDownloadMenu(url, quality, fromPlayer) {
-        if (!url || typeof url !== 'string') {
-            Lampa.Noty.show('ERROR: URL is ' + (typeof url));
+    function showDownloadMenu(urls, fromPlayer) {
+        // urls can be: string (single URL), or array of {url, label/quality}
+        var urlList = [];
+        if (typeof urls === 'string') {
+            urlList = [{ url: urls, label: '' }];
+        } else if (Array.isArray(urls)) {
+            urlList = urls;
+        } else {
+            Lampa.Noty.show('ERROR: Invalid URLs');
             return;
         }
 
-        if (url.indexOf('http') !== 0) {
-            Lampa.Noty.show('ERROR: URL not http: ' + url.substring(0, 40));
+        if (urlList.length === 0) {
+            Lampa.Noty.show('No URLs available');
             return;
         }
 
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
-        var filename = getFilename(quality);
         var returnTo = fromPlayer ? 'player' : 'content';
 
+        // Function to do actual download
+        function doDownload(url, quality) {
+            var filename = getFilename(quality);
+            var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+            Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
+            Lampa.Noty.show('Downloading: ' + filename);
+            Lampa.Controller.toggle(returnTo);
+        }
+
+        // Function to open in external player
+        function doExternal(url, quality) {
+            var filename = getFilename(quality);
+            Lampa.Android.openPlayer(url, JSON.stringify({ title: filename }));
+            Lampa.Noty.show('Opening player...');
+            Lampa.Controller.toggle(returnTo);
+        }
+
+        // Function to show quality selector then action
+        function selectQualityThen(action) {
+            if (urlList.length === 1) {
+                action(urlList[0].url, urlList[0].label || urlList[0].quality || '');
+                return;
+            }
+
+            var items = urlList.map(function(u) {
+                return { title: u.label || u.quality || 'Video', url: u.url };
+            });
+
+            Lampa.Select.show({
+                title: 'Вибери якість',
+                items: items,
+                onSelect: function(sel) {
+                    Lampa.Select.close();
+                    action(sel.url, sel.title);
+                },
+                onBack: function() { Lampa.Controller.toggle(returnTo); },
+                _dlHelper: true
+            });
+        }
+
+        // Main menu
         var items = [];
+        var firstUrl = urlList[0].url;
+        var qualityInfo = urlList.length > 1 ? urlList.length + ' qualities' : '';
 
         items.push({
             title: '🔗 Show URL',
-            subtitle: url.substring(0, 45) + '...',
+            subtitle: firstUrl.substring(0, 45) + '...',
             id: 'showurl'
         });
 
         if (androidAvailable) {
-            items.push({ title: '📥 ADM / 1DM / DVGet', subtitle: filename + '.mp4', id: 'download' });
-            items.push({ title: '▶️ External Player', subtitle: 'VLC, MX...', id: 'external' });
+            items.push({
+                title: '📥 ADM / 1DM / DVGet',
+                subtitle: qualityInfo || getFilename('') + '.mp4',
+                id: 'download'
+            });
+            items.push({
+                title: '▶️ External Player',
+                subtitle: 'VLC, MX...',
+                id: 'external'
+            });
         }
 
         items.push({ title: '📋 Copy URL', id: 'copy' });
 
         Lampa.Select.show({
-            title: 'Download: ' + filename.substring(0, 25),
+            title: 'Download',
             items: items,
             onSelect: function(item) {
                 Lampa.Select.close();
 
                 if (item.id === 'showurl') {
-                    Lampa.Select.show({
-                        title: 'URL',
-                        items: [
-                            { title: url.substring(0, 60) },
-                            { title: url.substring(60, 120) || '(end)' },
-                            { title: 'Filename: ' + filename },
-                            { title: '📋 Copy', id: 'copy' }
-                        ],
-                        onSelect: function(sel) {
-                            if (sel.id === 'copy') {
-                                copyToClipboard(url);
-                                Lampa.Noty.show('Copied!');
-                            }
-                            Lampa.Select.close();
-                            Lampa.Controller.toggle(returnTo);
-                        },
-                        onBack: function() { Lampa.Controller.toggle(returnTo); },
-                        _dlHelper: true
+                    selectQualityThen(function(url, quality) {
+                        Lampa.Select.show({
+                            title: 'URL (' + quality + ')',
+                            items: [
+                                { title: url.substring(0, 60) },
+                                { title: url.substring(60, 120) || '(end)' },
+                                { title: '📋 Copy', id: 'copy', _url: url }
+                            ],
+                            onSelect: function(sel) {
+                                if (sel.id === 'copy') {
+                                    copyToClipboard(sel._url);
+                                    Lampa.Noty.show('Copied!');
+                                }
+                                Lampa.Select.close();
+                                Lampa.Controller.toggle(returnTo);
+                            },
+                            onBack: function() { Lampa.Controller.toggle(returnTo); },
+                            _dlHelper: true
+                        });
                     });
                 } else if (item.id === 'download') {
-                    var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
-                    Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
-                    Lampa.Noty.show('Opening: ' + filename);
-                    Lampa.Controller.toggle(returnTo);
+                    selectQualityThen(doDownload);
                 } else if (item.id === 'external') {
-                    Lampa.Android.openPlayer(url, JSON.stringify({ title: filename }));
-                    Lampa.Noty.show('Opening player...');
-                    Lampa.Controller.toggle(returnTo);
+                    selectQualityThen(doExternal);
                 } else if (item.id === 'copy') {
-                    copyToClipboard(url);
-                    Lampa.Noty.show('URL copied!');
-                    Lampa.Controller.toggle(returnTo);
+                    selectQualityThen(function(url) {
+                        copyToClipboard(url);
+                        Lampa.Noty.show('URL copied!');
+                        Lampa.Controller.toggle(returnTo);
+                    });
                 }
             },
             onBack: function() { Lampa.Controller.toggle(returnTo); },
@@ -154,54 +208,31 @@
     }
 
     function showPlayerMenu() {
-        console.log('[DLHelper] showPlayerMenu called');
-        Lampa.Noty.show('DL: captured=' + capturedUrls.length);
+        // Build list of available URLs
+        var urlList = [];
 
-        // Get current playing URL
+        // Add captured URLs
+        if (capturedUrls.length > 0) {
+            capturedUrls.forEach(function(u) {
+                urlList.push({ url: u.url, label: u.label || u.quality || '' });
+            });
+        }
+
+        // Add current playing URL if not already in list
         var currentUrl = getVideoUrl();
-        console.log('[DLHelper] currentUrl:', currentUrl);
-
         if (currentUrl) {
-            Lampa.Noty.show('DL: URL found');
+            var alreadyHas = urlList.some(function(u) { return u.url === currentUrl; });
+            if (!alreadyHas) {
+                urlList.unshift({ url: currentUrl, label: 'Current' });
+            }
         }
 
-        // If we have multiple captured URLs, show quality selector
-        if (capturedUrls.length > 1) {
-            console.log('[DLHelper] Showing quality selector');
-            var items = capturedUrls.map(function(u) {
-                return { title: u.label || u.quality || 'Video', url: u.url };
-            });
-
-            Lampa.Select.show({
-                title: 'Вибери якість',
-                items: items,
-                onSelect: function(sel) {
-                    Lampa.Select.close();
-                    showDownloadMenu(sel.url, sel.title, true);
-                },
-                onBack: function() { Lampa.Controller.toggle('player'); },
-                _dlHelper: true
-            });
+        if (urlList.length === 0) {
+            Lampa.Noty.show('No URL. Play video first!');
             return;
         }
 
-        // Use captured URL or current URL
-        var url = currentUrl;
-        var quality = '';
-
-        if (capturedUrls.length === 1) {
-            url = capturedUrls[0].url;
-            quality = capturedUrls[0].quality || capturedUrls[0].label || '';
-        }
-
-        if (!url) {
-            Lampa.Noty.show('No URL found');
-            console.log('[DLHelper] No URL found');
-            return;
-        }
-
-        console.log('[DLHelper] Showing download menu for:', url.substring(0, 50));
-        showDownloadMenu(url, quality, true);
+        showDownloadMenu(urlList, true);
     }
 
     function addPlayerButton() {
@@ -386,7 +417,7 @@
                     var dlUrls = urls.length > 0 ? urls : capturedUrls;
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: dlUrls.length > 0 ? dlUrls.length + ' качеств' : 'No URLs',
+                        subtitle: dlUrls.length > 0 ? dlUrls.length + ' qualities' : 'No URLs',
                         _urls: dlUrls,
                         onSelect: function() {
                             Lampa.Select.close();
@@ -396,26 +427,8 @@
                                 return;
                             }
 
-                            if (this._urls.length === 1) {
-                                showDownloadMenu(this._urls[0].url, this._urls[0].quality || this._urls[0].label);
-                                return;
-                            }
-
-                            // Multiple - show selector
-                            var items = this._urls.map(function(u) {
-                                return { title: u.label || u.quality, url: u.url };
-                            });
-
-                            Lampa.Select.show({
-                                title: 'Вибери якість',
-                                items: items,
-                                onSelect: function(sel) {
-                                    Lampa.Select.close();
-                                    showDownloadMenu(sel.url, sel.title);
-                                },
-                                onBack: function() { Lampa.Controller.toggle('content'); },
-                                _dlHelper: true
-                            });
+                            // Pass all URLs to download menu - quality selection happens there
+                            showDownloadMenu(this._urls, false);
                         }
                     });
                 }
