@@ -727,6 +727,107 @@
         });
     }
 
+    // Add download button to full card page
+    function addDownloadButtonToFullPage(activity) {
+        try {
+            // Find the buttons container on the full page
+            var render = activity.render();
+            if (!render) return;
+
+            var actionsContainer = render.find('.full-start__buttons, .full-start-new__buttons');
+            if (!actionsContainer.length) return;
+
+            // Check if button already exists
+            if (actionsContainer.find('.dlhelper-full-btn').length) return;
+
+            var card = activity.card;
+            if (card) {
+                savedCard = card;
+            }
+
+            // Create download button
+            var btn = $('<div class="full-start__button selector dlhelper-full-btn">' +
+                '<svg viewBox="0 0 24 24" fill="currentColor" style="width:1.5em;height:1.5em;margin-right:5px;"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>' +
+                '<span>Download</span>' +
+            '</div>');
+
+            btn.on('hover:enter', function() {
+                showFullPageDownloadMenu(card);
+            });
+
+            // Add after the first button (usually "Watch")
+            var firstBtn = actionsContainer.find('.full-start__button').first();
+            if (firstBtn.length) {
+                btn.insertAfter(firstBtn);
+            } else {
+                actionsContainer.append(btn);
+            }
+
+            // Re-enable navigation
+            Lampa.Controller.collectionFocus(false, render);
+        } catch(e) {
+            console.log('[DLHelper] Error adding full page button:', e);
+        }
+    }
+
+    // Download menu for full card page (without player)
+    function showFullPageDownloadMenu(card) {
+        var items = [];
+        var title = card ? (card.title || card.name || 'video') : 'video';
+
+        // Option to go to online sources and download from there
+        items.push({
+            title: 'Open Online Sources',
+            subtitle: 'Select episode/quality to download',
+            id: 'sources'
+        });
+
+        // If we have captured episodes, show batch option
+        if (availableEpisodes.length > 0) {
+            items.push({
+                title: 'Batch Download',
+                subtitle: availableEpisodes.length + ' episodes captured',
+                id: 'batch'
+            });
+        }
+
+        items.push({
+            title: 'Copy Card Info',
+            subtitle: title,
+            id: 'copy'
+        });
+
+        Lampa.Select.show({
+            title: 'Download: ' + title.substring(0, 30),
+            items: items,
+            onSelect: function(item) {
+                Lampa.Select.close();
+
+                if (item.id === 'sources') {
+                    // Trigger online sources
+                    Lampa.Activity.push({
+                        url: '',
+                        title: title,
+                        component: 'online',
+                        search: title,
+                        search_one: title,
+                        card: card
+                    });
+                } else if (item.id === 'batch') {
+                    showBatchDownload();
+                } else if (item.id === 'copy') {
+                    var info = title;
+                    if (card && card.year) info += ' (' + card.year + ')';
+                    copyToClipboard(info);
+                    Lampa.Noty.show('Copied: ' + info);
+                }
+            },
+            onBack: function() {
+                Lampa.Controller.toggle('content');
+            }
+        });
+    }
+
     function addButton() {
         if (document.querySelector('.dlhelper-btn')) return;
         var panel = document.querySelector('.player-panel__right');
@@ -806,41 +907,14 @@
             }
         });
 
-        // Hook into context menu for episodes in online sources
-        if (Lampa.ContextMenu) {
-            var originalShow = Lampa.ContextMenu.show;
-            Lampa.ContextMenu.show = function(params) {
-                // Add download option to context menu
-                if (params && params.items) {
-                    var hasUrl = false;
-                    var streamUrl = '';
-                    var streamTitle = '';
-
-                    // Try to get URL from params
-                    if (params.url) {
-                        hasUrl = true;
-                        streamUrl = params.url;
-                        streamTitle = params.title || 'video';
-                    } else if (params.item && params.item.url) {
-                        hasUrl = true;
-                        streamUrl = params.item.url;
-                        streamTitle = params.item.title || params.item.name || 'video';
-                    }
-
-                    if (hasUrl) {
-                        params.items.push({
-                            title: 'Download',
-                            subtitle: 'Open in download manager',
-                            onSelect: function() {
-                                Lampa.ContextMenu.hide();
-                                showDownloadMenu(streamUrl, streamTitle);
-                            }
-                        });
-                    }
-                }
-                return originalShow.call(this, params);
-            };
-        }
+        // Add download button to full card page (movie/series detail page)
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type === 'complite' && e.object && e.object.activity) {
+                setTimeout(function() {
+                    addDownloadButtonToFullPage(e.object.activity);
+                }, 300);
+            }
+        });
 
         // Intercept Select.show to add download option to episode lists
         var originalSelectShow = Lampa.Select.show;
