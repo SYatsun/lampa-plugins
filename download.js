@@ -163,6 +163,49 @@
         return false;
     }
 
+    // Show actions for selected quality
+    function showQualityActions(selectedUrl, qualityLabel, videoTitle) {
+        var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
+        var safeTitle = videoTitle.replace(/[<>:"/\\|?*]/g, '_') + ' ' + qualityLabel;
+
+        var items = [];
+
+        if (androidAvailable) {
+            items.push({ title: 'Open in 1DM', subtitle: safeTitle, id: '1dm' });
+            items.push({ title: 'Open in DVGet', subtitle: safeTitle, id: 'dvget' });
+            items.push({ title: 'Open in External App', subtitle: 'VLC, MX Player...', id: 'external' });
+        }
+
+        items.push({ title: 'Copy URL', subtitle: qualityLabel + ' stream', id: 'copy' });
+
+        Lampa.Select.show({
+            title: qualityLabel + ' - What to do?',
+            items: items,
+            onSelect: function(item) {
+                Lampa.Select.close();
+
+                if (item.id === '1dm') {
+                    var urlWith1DM = selectedUrl + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
+                    Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: safeTitle }));
+                    Lampa.Noty.show('Opening ' + qualityLabel + ' in 1DM...');
+                } else if (item.id === 'dvget') {
+                    var urlWithDV = selectedUrl + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
+                    Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: safeTitle }));
+                    Lampa.Noty.show('Opening ' + qualityLabel + ' in DVGet...');
+                } else if (item.id === 'external') {
+                    Lampa.Android.openPlayer(selectedUrl, JSON.stringify({ title: safeTitle }));
+                    Lampa.Noty.show('Opening ' + qualityLabel + '...');
+                } else {
+                    copyToClipboard(selectedUrl);
+                    Lampa.Noty.show(qualityLabel + ' URL copied!');
+                }
+            },
+            onBack: function() {
+                showMenu(); // Go back to main menu
+            }
+        });
+    }
+
     function showMenu() {
         var url = getVideoUrl();
         if (!url) {
@@ -214,8 +257,8 @@
                         items: qualityItems,
                         onSelect: function(selected) {
                             Lampa.Select.close();
-                            copyToClipboard(selected.url);
-                            Lampa.Noty.show(selected.title + ' URL copied!');
+                            // Show action menu for selected quality
+                            showQualityActions(selected.url, selected.title, title);
                         },
                         onBack: function() {
                             showMenu(); // Go back to main menu
