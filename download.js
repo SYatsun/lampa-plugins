@@ -69,6 +69,10 @@
     // Store episodes list for batch download
     var availableEpisodes = [];
 
+    // Store last stream URL for player menu
+    var lastStreamUrl = '';
+    var lastStreamTitle = '';
+
     // Try to get all available quality URLs
     function getQualities() {
         var qualities = [];
@@ -779,12 +783,18 @@
             });
         }
 
-        // Hook into video source selection
+        // Hook into video source selection - capture URL before player menu shows
         Lampa.Listener.follow('video', function (e) {
             console.log('[DLHelper] Video event:', e.type, e.data ? Object.keys(e.data) : 'no data');
             if (e.data) {
                 captureQualities(e.data);
                 captureEpisodes(e.data);
+                // Store URL for player menu
+                if (e.data.url) {
+                    lastStreamUrl = e.data.url;
+                    lastStreamTitle = e.data.title || 'video';
+                    console.log('[DLHelper] Captured stream URL:', lastStreamUrl.substring(0, 50));
+                }
             }
         });
 
@@ -806,57 +816,44 @@
             }
         });
 
-        // Intercept Select.show to add download options to episode/quality lists
+        // Intercept Select.show to add download option to player action menu
         var originalSelectShow = Lampa.Select.show;
+
         Lampa.Select.show = function(params) {
-            // Check if this looks like an episode/source list
             if (params && params.items && Array.isArray(params.items) && !params._dlHelperProcessed) {
                 params._dlHelperProcessed = true;
 
-                var itemsWithUrls = params.items.filter(function(item) {
-                    return item.url || item.file || item.stream;
+                // Check if this is the player action menu ("Действие" / player selection)
+                var isPlayerMenu = params.items.some(function(item) {
+                    var title = (item.title || '').toLowerCase();
+                    return title.indexOf('плеер') > -1 ||
+                           title.indexOf('player') > -1 ||
+                           title.indexOf('android') > -1 ||
+                           title.indexOf('lampa') > -1;
                 });
 
-                // If we have items with URLs, add download options
-                if (itemsWithUrls.length > 0) {
-                    // Save for batch download
-                    availableEpisodes = itemsWithUrls.map(function(item, idx) {
-                        return {
-                            episode: item.episode || idx + 1,
-                            season: item.season || 1,
-                            title: item.title || item.name || '',
-                            url: item.url || item.file || item.stream,
-                            quality: item.quality || ''
-                        };
-                    });
+                if (isPlayerMenu) {
+                    // This is the player selection menu - add download option
+                    // Get URL from params or stored value
+                    var streamUrl = params.url || lastStreamUrl;
+                    var streamTitle = params.title || lastStreamTitle || 'video';
 
-                    // Add separator and download options
-                    params.items.push({ title: '──────────', separator: true });
-
-                    // Single item download
-                    if (itemsWithUrls.length === 1) {
-                        var singleItem = itemsWithUrls[0];
-                        var singleUrl = singleItem.url || singleItem.file || singleItem.stream;
-                        var singleTitle = singleItem.title || singleItem.name || 'video';
+                    if (streamUrl) {
                         params.items.push({
                             title: '⬇️ Download',
-                            subtitle: singleTitle,
+                            subtitle: 'Save to device',
                             onSelect: function() {
                                 Lampa.Select.close();
-                                showDownloadMenu(singleUrl, singleTitle);
-                            }
-                        });
-                    } else {
-                        // Multiple items - add batch download
-                        params.items.push({
-                            title: '⬇️ Download All (' + itemsWithUrls.length + ')',
-                            subtitle: 'Batch download',
-                            onSelect: function() {
-                                Lampa.Select.close();
-                                showBatchDownload();
+                                showDownloadMenu(streamUrl, streamTitle);
                             }
                         });
                     }
+                }
+
+                // Also check if params has URL directly (store it for later)
+                if (params.url) {
+                    lastStreamUrl = params.url;
+                    lastStreamTitle = params.title || 'video';
                 }
             }
             return originalSelectShow.call(this, params);
