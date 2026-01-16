@@ -484,9 +484,9 @@
                 // HLS options - direct URL extraction
                 const directUrl = extractDirectUrl(url) || url;
 
-                // Primary option - automated 1DM download with filename
-                items.push({ title: '⬇️ 1DM Download', subtitle: filename + '.mp4', id: 'download1dm', directUrl, headers });
-                items.push({ title: '📤 Share → 1DM', subtitle: 'Open in 1DM Browser', id: 'share1dm', directUrl });
+                // Download manager options
+                items.push({ title: '⬇️ 1DM', subtitle: filename + '.mp4', id: 'download1dm', directUrl, headers });
+                items.push({ title: '⬇️ ADM', subtitle: 'Share → ADM Editor', id: 'downloadadm', directUrl });
                 items.push({ title: 'Copy URL', subtitle: 'For manual download', id: 'copyurl', directUrl });
                 items.push({ title: 'Copy Filename', subtitle: filename + '.mp4', id: 'copyname' });
 
@@ -517,6 +517,12 @@
                 } else if (item.id === 'download1dm') {
                     const dlUrl = item.directUrl || url;
                     open1DMDownload(dlUrl, filename + '.mp4', item.headers);
+                } else if (item.id === 'downloadadm') {
+                    const dlUrl = item.directUrl || url;
+                    // ADM: share URL, copy filename to clipboard
+                    copyToClipboard(filename + '.mp4');
+                    shareToApp(dlUrl, filename + '.mp4');
+                    Lampa.Noty.show('Filename copied! Select ADM Editor');
                 } else if (item.id === 'share1dm') {
                     const dlUrl = item.directUrl || url;
                     shareToApp(dlUrl, filename + '.mp4');
