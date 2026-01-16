@@ -495,10 +495,44 @@
     }
 
     // Download menu for context menu (without player)
-    function showDownloadMenu(url, title) {
+    function showDownloadMenu(url, title, epInfo) {
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
-        // Use smart filename format (Series - S01E05 - Episode - Quality)
-        var filename = getFilename() || (title || 'video').replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
+
+        // Build filename from episode info
+        var filename = '';
+        var parts = [];
+
+        // Series name from savedCard
+        if (savedCard) {
+            parts.push(savedCard.title || savedCard.name || '');
+        }
+
+        // Season/Episode from epInfo or try playdata
+        var season = epInfo && epInfo.season;
+        var episode = epInfo && epInfo.episode;
+
+        if (!season || !episode) {
+            try {
+                var pd = Lampa.Player.playdata();
+                if (pd) {
+                    season = season || pd.season;
+                    episode = episode || pd.episode;
+                }
+            } catch(e) {}
+        }
+
+        if (season || episode) {
+            var se = 'S' + String(season || 1).padStart(2, '0') + 'E' + String(episode || 1).padStart(2, '0');
+            parts.push(se);
+        }
+
+        // Episode title
+        if (epInfo && epInfo.episodeTitle && epInfo.episodeTitle !== 'Действие') {
+            parts.push(epInfo.episodeTitle);
+        }
+
+        filename = parts.filter(function(p) { return p; }).join(' - ').replace(/[<>:"/\\|?*]/g, '').trim();
+        if (!filename) filename = (title || 'video').replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
 
         var items = [];
 
@@ -853,10 +887,22 @@
                     var playerItem = null;
                     var foundUrl = null;
                     var debugInfo = [];
+                    var episodeInfo = { season: null, episode: null, episodeTitle: '' };
 
                     debugInfo.push('params: ' + Object.keys(params).join(','));
                     if (params.url) { foundUrl = params.url; debugInfo.push('params.url: YES'); }
                     if (params.file) { foundUrl = params.file; debugInfo.push('params.file: YES'); }
+
+                    // Try to get episode info from params
+                    if (params.season) { episodeInfo.season = params.season; debugInfo.push('params.season: ' + params.season); }
+                    if (params.episode) { episodeInfo.episode = params.episode; debugInfo.push('params.episode: ' + params.episode); }
+                    if (params.title) { episodeInfo.episodeTitle = params.title; debugInfo.push('params.title: ' + params.title); }
+                    if (params.name) { debugInfo.push('params.name: ' + params.name); }
+                    if (params.voice) { debugInfo.push('params.voice: ' + params.voice); }
+                    if (params.quality) { debugInfo.push('params.quality: ' + params.quality); }
+
+                    // Collect all quality URLs
+                    var qualityUrls = [];
 
                     for (var i = 0; i < params.items.length; i++) {
                         var item = params.items[i];
@@ -864,17 +910,27 @@
                         debugInfo.push('Item' + i + ': ' + (item.title || '').substring(0, 20) + ' [' + keys + ']');
 
                         // Check if item has URL directly
-                        if (item.url) { foundUrl = item.url; debugInfo.push('-> url found!'); }
-                        if (item.file) { foundUrl = item.file; debugInfo.push('-> file found!'); }
-                        if (item.link) { foundUrl = item.link; debugInfo.push('-> link found!'); }
-                        if (item.stream) { foundUrl = item.stream; debugInfo.push('-> stream found!'); }
-                        if (item.copylink) { foundUrl = item.copylink; debugInfo.push('-> copylink found!'); }
+                        var itemUrl = item.url || item.file || item.link || item.stream || item.copylink;
+                        if (itemUrl) {
+                            foundUrl = itemUrl;
+                            debugInfo.push('-> url found!');
 
-                        var itemTitle = (item.title || '').toLowerCase();
-                        if (itemTitle.indexOf('плеер') > -1 || itemTitle.indexOf('player') > -1) {
+                            // Check if this is a quality/copy link item
+                            var itemTitle = item.title || '';
+                            if (itemTitle.indexOf('Копировать') > -1 || itemTitle.indexOf('Copy') > -1 ||
+                                itemTitle.indexOf('720') > -1 || itemTitle.indexOf('480') > -1 ||
+                                itemTitle.indexOf('1080') > -1 || itemTitle.indexOf('360') > -1) {
+                                qualityUrls.push({ label: itemTitle, url: itemUrl });
+                            }
+                        }
+
+                        var itemTitleLower = (item.title || '').toLowerCase();
+                        if (itemTitleLower.indexOf('плеер') > -1 || itemTitleLower.indexOf('player') > -1) {
                             playerItem = item;
                         }
                     }
+
+                    debugInfo.push('Quality URLs: ' + qualityUrls.length);
 
                     // Get title from savedCard or activity
                     var videoTitle = 'video';
@@ -914,16 +970,41 @@
                     // Add Download option
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: foundUrl ? 'URL found!' : 'Will try to capture',
+                        subtitle: foundUrl ? (qualityUrls.length > 1 ? qualityUrls.length + ' qualities' : 'URL found!') : 'Will try to capture',
                         _playerItem: playerItem,
                         _foundUrl: foundUrl,
+                        _qualityUrls: qualityUrls,
                         _videoTitle: videoTitle,
+                        _episodeInfo: episodeInfo,
                         onSelect: function() {
                             Lampa.Select.close();
 
+                            // If we have multiple quality URLs, show selector
+                            if (this._qualityUrls && this._qualityUrls.length > 1) {
+                                var self = this;
+                                var qualityItems = this._qualityUrls.map(function(q) {
+                                    // Extract quality label from title (e.g., "Копировать ссылку на 720p")
+                                    var label = q.label.replace('Копировать ссылку на ', '').replace('Copy link ', '');
+                                    return { title: label, url: q.url };
+                                });
+
+                                Lampa.Select.show({
+                                    title: 'Select Quality',
+                                    items: qualityItems,
+                                    onSelect: function(selected) {
+                                        Lampa.Select.close();
+                                        showDownloadMenu(selected.url, self._videoTitle, self._episodeInfo);
+                                    },
+                                    onBack: function() {
+                                        Lampa.Controller.toggle('content');
+                                    }
+                                });
+                                return;
+                            }
+
                             // First check if we have URL directly
                             if (this._foundUrl) {
-                                showDownloadMenu(this._foundUrl, this._videoTitle);
+                                showDownloadMenu(this._foundUrl, this._videoTitle, this._episodeInfo);
                                 return;
                             }
 
