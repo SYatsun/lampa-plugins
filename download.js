@@ -497,11 +497,13 @@
     // Download menu for context menu (without player)
     function showDownloadMenu(url, title) {
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
-        var filename = title.replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
+        // Use smart filename format (Series - S01E05 - Episode - Quality)
+        var filename = getFilename() || (title || 'video').replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
 
         var items = [];
 
         if (androidAvailable) {
+            items.push({ title: 'Download with ADM', subtitle: filename + '.mp4', id: 'adm' });
             items.push({ title: 'Download with 1DM', subtitle: filename + '.mp4', id: '1dm' });
             items.push({ title: 'Download with DVGet', subtitle: filename + '.mp4', id: 'dvget' });
             items.push({ title: 'Open in External App', subtitle: 'VLC, MX Player...', id: 'external' });
@@ -515,7 +517,11 @@
             onSelect: function(item) {
                 Lampa.Select.close();
 
-                if (item.id === '1dm') {
+                if (item.id === 'adm') {
+                    var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                    Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('ADM: ' + filename);
+                } else if (item.id === '1dm') {
                     var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
                     Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
                     Lampa.Noty.show('1DM: ' + filename);
@@ -870,6 +876,22 @@
                         }
                     }
 
+                    // Get title from savedCard or activity
+                    var videoTitle = 'video';
+                    if (savedCard) {
+                        videoTitle = savedCard.title || savedCard.name || 'video';
+                    } else {
+                        try {
+                            var act = Lampa.Activity.active();
+                            if (act && act.card) {
+                                videoTitle = act.card.title || act.card.name || 'video';
+                            }
+                        } catch(e) {}
+                    }
+
+                    // Add title to debug
+                    debugInfo.push('Title: ' + videoTitle);
+
                     // Store debug for later display
                     var storedDebug = debugInfo;
 
@@ -895,12 +917,13 @@
                         subtitle: foundUrl ? 'URL found!' : 'Will try to capture',
                         _playerItem: playerItem,
                         _foundUrl: foundUrl,
+                        _videoTitle: videoTitle,
                         onSelect: function() {
                             Lampa.Select.close();
 
                             // First check if we have URL directly
                             if (this._foundUrl) {
-                                showDownloadMenu(this._foundUrl, 'video');
+                                showDownloadMenu(this._foundUrl, this._videoTitle);
                                 return;
                             }
 
