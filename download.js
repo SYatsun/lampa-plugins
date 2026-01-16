@@ -218,6 +218,17 @@
                     debug.push('Items: ' + params.items.length);
                     debug.push('Params keys: ' + Object.keys(params).join(', '));
 
+                    // Check params-level properties for file/url
+                    if (typeof params.file === 'function') {
+                        try {
+                            var pUrl = params.file();
+                            debug.push('params.file() = ' + (pUrl || '').substring(0, 50));
+                            if (pUrl && pUrl.indexOf('http') === 0) {
+                                urls.push({ label: 'params.file', url: pUrl });
+                            }
+                        } catch(e) { debug.push('params.file() error: ' + e); }
+                    }
+
                     params.items.forEach(function(item, i) {
                         var keys = Object.keys(item);
                         debug.push('---');
@@ -229,22 +240,63 @@
                             var val = item[key];
                             var type = typeof val;
 
-                            if (type === 'string' && val.length > 10) {
-                                debug.push('  ' + key + ' [str]: ' + val.substring(0, 50));
+                            if (type === 'string') {
+                                if (val.length > 5) {
+                                    debug.push('  ' + key + ' [str]: ' + val.substring(0, 50));
+                                }
+                                // Check for URL
                                 if (val.indexOf('http') === 0) {
                                     urls.push({ label: item.title || key, url: val });
                                     debug.push('    ^ VALID URL ^');
                                 }
+                                // Check copylink specifically (might be stored differently)
+                                if (key === 'copylink' || key === 'copy_link' || key === 'link') {
+                                    debug.push('    ^ Found ' + key + ': ' + val);
+                                    if (val && val.indexOf('http') !== 0 && val.length > 5) {
+                                        // Might be relative URL or special format
+                                        debug.push('    ^ Non-http link, saving anyway');
+                                        urls.push({ label: item.title + ' (link)', url: val });
+                                    }
+                                }
                             } else if (type === 'function') {
                                 debug.push('  ' + key + ' [func]');
+                                // Try calling ALL functions (except onSelect/onBack)
+                                if (key !== 'onSelect' && key !== 'onBack' && key !== 'onFocus') {
+                                    try {
+                                        var result = val();
+                                        var resultStr = (result === null || result === undefined) ? 'null' : String(result).substring(0, 50);
+                                        debug.push('    called ' + key + '() = ' + resultStr);
+                                        if (result && typeof result === 'string' && result.indexOf('http') === 0) {
+                                            urls.push({ label: item.title || key, url: result });
+                                            debug.push('    ^ VALID URL from func ^');
+                                        }
+                                    } catch(e) { debug.push('    ' + key + '() error: ' + e.message); }
+                                }
                             } else if (type === 'object' && val !== null) {
-                                debug.push('  ' + key + ' [obj]: ' + Object.keys(val).join(','));
+                                var objKeys = Object.keys(val);
+                                debug.push('  ' + key + ' [obj]: ' + objKeys.join(','));
+                                // Check nested URL properties
+                                objKeys.forEach(function(oKey) {
+                                    var oVal = val[oKey];
+                                    if (typeof oVal === 'string' && oVal.indexOf('http') === 0) {
+                                        debug.push('    ' + key + '.' + oKey + ' = ' + oVal.substring(0, 40));
+                                        urls.push({ label: item.title + ' (' + oKey + ')', url: oVal });
+                                    }
+                                });
                             }
                         });
                     });
 
                     debug.push('---');
                     debug.push('Total URLs found: ' + urls.length);
+
+                    // Find "Копировать ссылку" item for triggering
+                    var copyItem = null;
+                    params.items.forEach(function(item) {
+                        if (item.title && item.title.toLowerCase().indexOf('копировать') > -1) {
+                            copyItem = item;
+                        }
+                    });
 
                     // Add DEBUG button
                     params.items.push({
@@ -261,6 +313,58 @@
                             });
                         }
                     });
+
+                    // Add "Trigger Copy" button to see what URL Lampa copies
+                    if (copyItem) {
+                        params.items.push({
+                            title: '🔗 Trigger Copy & Capture',
+                            subtitle: copyItem.title,
+                            _copyItem: copyItem,
+                            onSelect: function() {
+                                var ci = this._copyItem;
+                                // Intercept clipboard
+                                var origWrite = navigator.clipboard && navigator.clipboard.writeText;
+                                var capturedUrl = null;
+
+                                if (origWrite) {
+                                    navigator.clipboard.writeText = function(text) {
+                                        capturedUrl = text;
+                                        Lampa.Noty.show('Captured: ' + text.substring(0, 50));
+                                        return origWrite.call(navigator.clipboard, text);
+                                    };
+                                }
+
+                                // Also intercept execCommand
+                                var origExec = document.execCommand;
+                                document.execCommand = function(cmd) {
+                                    if (cmd === 'copy') {
+                                        var sel = window.getSelection();
+                                        if (sel && sel.toString()) {
+                                            capturedUrl = sel.toString();
+                                            Lampa.Noty.show('Captured (exec): ' + capturedUrl.substring(0, 50));
+                                        }
+                                    }
+                                    return origExec.apply(document, arguments);
+                                };
+
+                                // Trigger the copy item
+                                if (ci.onSelect) {
+                                    ci.onSelect(ci);
+                                }
+
+                                // Restore after short delay
+                                setTimeout(function() {
+                                    if (origWrite) navigator.clipboard.writeText = origWrite;
+                                    document.execCommand = origExec;
+
+                                    if (capturedUrl && capturedUrl.indexOf('http') === 0) {
+                                        Lampa.Select.close();
+                                        showDownloadMenu(capturedUrl, 'Captured');
+                                    }
+                                }, 500);
+                            }
+                        });
+                    }
 
                     // Add DOWNLOAD button
                     params.items.push({
