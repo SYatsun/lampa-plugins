@@ -816,6 +816,19 @@
             }
         });
 
+        // Intercept Lampa.Player.play to capture URL
+        if (Lampa.Player && Lampa.Player.play) {
+            var originalPlay = Lampa.Player.play;
+            Lampa.Player.play = function(data) {
+                if (data && data.url) {
+                    lastStreamUrl = data.url;
+                    lastStreamTitle = data.title || 'video';
+                    console.log('[DLHelper] Captured URL from Player.play:', lastStreamUrl.substring(0, 50));
+                }
+                return originalPlay.apply(this, arguments);
+            };
+        }
+
         // Intercept Select.show to add download option to player action menu
         var originalSelectShow = Lampa.Select.show;
 
@@ -830,54 +843,130 @@
                                    menuTitle === 'действие';
 
                 if (isActionMenu) {
-                    // Try to get URL from Lampa's online component
-                    var streamUrl = lastStreamUrl;
-                    var streamTitle = lastStreamTitle || 'video';
+                    // Find a player item and collect debug info
+                    var playerItem = null;
+                    var foundUrl = null;
+                    var debugInfo = [];
 
-                    // Try to get from Lampa.Player if available
-                    try {
-                        var pd = Lampa.Player.playdata();
-                        if (pd && pd.url) {
-                            streamUrl = pd.url;
-                            streamTitle = pd.title || streamTitle;
+                    debugInfo.push('params: ' + Object.keys(params).join(','));
+                    if (params.url) { foundUrl = params.url; debugInfo.push('params.url: YES'); }
+                    if (params.file) { foundUrl = params.file; debugInfo.push('params.file: YES'); }
+
+                    for (var i = 0; i < params.items.length; i++) {
+                        var item = params.items[i];
+                        var keys = Object.keys(item).join(',');
+                        debugInfo.push('Item' + i + ': ' + (item.title || '').substring(0, 20) + ' [' + keys + ']');
+
+                        // Check if item has URL directly
+                        if (item.url) { foundUrl = item.url; debugInfo.push('-> url found!'); }
+                        if (item.file) { foundUrl = item.file; debugInfo.push('-> file found!'); }
+                        if (item.link) { foundUrl = item.link; debugInfo.push('-> link found!'); }
+                        if (item.stream) { foundUrl = item.stream; debugInfo.push('-> stream found!'); }
+
+                        var itemTitle = (item.title || '').toLowerCase();
+                        if (itemTitle.indexOf('плеер') > -1 || itemTitle.indexOf('player') > -1) {
+                            playerItem = item;
                         }
-                    } catch(e) {}
+                    }
 
-                    // Try to get from Activity's component
-                    try {
-                        var activity = Lampa.Activity.active();
-                        if (activity && activity.component) {
-                            var comp = activity.component;
-                            if (comp.url) streamUrl = comp.url;
-                            if (comp.video && comp.video.url) streamUrl = comp.video.url;
+                    // Store debug for later display
+                    var storedDebug = debugInfo;
+
+                    // Add Debug option first
+                    params.items.push({
+                        title: '🔍 Debug Info',
+                        subtitle: 'Show menu structure',
+                        _debug: storedDebug,
+                        onSelect: function() {
+                            Lampa.Select.close();
+                            var items = this._debug.map(function(d) { return { title: d }; });
+                            Lampa.Select.show({
+                                title: 'Debug',
+                                items: items,
+                                onBack: function() { Lampa.Controller.toggle('content'); }
+                            });
                         }
-                    } catch(e) {}
+                    });
 
-                    // Add Download option - will try to get URL when clicked
+                    // Add Download option
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: 'Save video',
+                        subtitle: foundUrl ? 'URL found!' : 'Will try to capture',
+                        _playerItem: playerItem,
+                        _foundUrl: foundUrl,
                         onSelect: function() {
                             Lampa.Select.close();
 
-                            // Try to get URL at click time
-                            var urlToDownload = streamUrl;
-                            var titleToDownload = streamTitle;
+                            // First check if we have URL directly
+                            if (this._foundUrl) {
+                                showDownloadMenu(this._foundUrl, 'video');
+                                return;
+                            }
 
-                            // Last attempt - check playdata again
+                            // Get the player item reference
+                            var pItem = this._playerItem;
+
+                            if (!pItem || !pItem.onSelect) {
+                                Lampa.Noty.show('No player item found');
+                                return;
+                            }
+
+                            // Temporarily intercept openPlayer to capture URL
+                            var capturedUrl = null;
+                            var capturedTitle = '';
+
+                            var originalOpenPlayer = null;
+                            if (Lampa.Android && Lampa.Android.openPlayer) {
+                                originalOpenPlayer = Lampa.Android.openPlayer;
+                                Lampa.Android.openPlayer = function(url, titleJson) {
+                                    capturedUrl = url;
+                                    try {
+                                        var parsed = JSON.parse(titleJson);
+                                        capturedTitle = parsed.title || '';
+                                    } catch(e) {
+                                        capturedTitle = titleJson || '';
+                                    }
+                                    console.log('[DLHelper] Intercepted URL:', url.substring(0, 50));
+                                    // Don't actually open player
+                                };
+                            }
+
+                            // Also intercept Player.play
+                            var originalPlayerPlay = null;
+                            if (Lampa.Player && Lampa.Player.play) {
+                                originalPlayerPlay = Lampa.Player.play;
+                                Lampa.Player.play = function(data) {
+                                    if (data && data.url) {
+                                        capturedUrl = data.url;
+                                        capturedTitle = data.title || '';
+                                    }
+                                    console.log('[DLHelper] Intercepted Player.play:', capturedUrl ? capturedUrl.substring(0, 50) : 'no url');
+                                    // Don't actually play
+                                };
+                            }
+
+                            // Call the player item's onSelect to trigger URL resolution
                             try {
-                                var pd = Lampa.Player.playdata();
-                                if (pd && pd.url) {
-                                    urlToDownload = pd.url;
-                                    titleToDownload = pd.title || titleToDownload;
-                                }
-                            } catch(e) {}
+                                pItem.onSelect(pItem);
+                            } catch(e) {
+                                console.log('[DLHelper] Error calling player onSelect:', e);
+                            }
 
-                            if (urlToDownload) {
-                                showDownloadMenu(urlToDownload, titleToDownload);
+                            // Restore original functions
+                            if (originalOpenPlayer) {
+                                Lampa.Android.openPlayer = originalOpenPlayer;
+                            }
+                            if (originalPlayerPlay) {
+                                Lampa.Player.play = originalPlayerPlay;
+                            }
+
+                            // Now use the captured URL
+                            if (capturedUrl) {
+                                // Remove any #filename that might have been added
+                                var cleanUrl = capturedUrl.split('#')[0];
+                                showDownloadMenu(cleanUrl, capturedTitle || 'video');
                             } else {
-                                // No URL - ask user to play first, then use player button
-                                Lampa.Noty.show('Play video first, then use download button in player');
+                                Lampa.Noty.show('Could not capture URL');
                             }
                         }
                     });
