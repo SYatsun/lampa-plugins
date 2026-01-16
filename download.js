@@ -128,6 +128,28 @@
         return String(label);
     }
 
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '';
+        var sizes = ['B', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
+    function fetchFileSize(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('HEAD', url, true);
+        xhr.timeout = 5000;
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                var size = xhr.getResponseHeader('Content-Length');
+                callback(size ? parseInt(size, 10) : 0);
+            }
+        };
+        xhr.onerror = function() { callback(0); };
+        xhr.ontimeout = function() { callback(0); };
+        xhr.send();
+    }
+
     function showQualitySelector(streams, returnTo) {
         if (!streams || streams.length === 0) {
             Lampa.Noty.show('No streams available');
@@ -139,10 +161,16 @@
             return;
         }
 
+        // Create items with loading subtitle
         var items = streams.map(function(s, i) {
-            return { title: getQualityLabel(s) || ('Quality ' + (i + 1)), url: s.url };
+            return {
+                title: getQualityLabel(s) || ('Quality ' + (i + 1)),
+                subtitle: 'Loading size...',
+                url: s.url
+            };
         });
 
+        // Show menu immediately
         Lampa.Select.show({
             title: 'Select Quality',
             items: items,
@@ -153,6 +181,44 @@
             onBack: function() { Lampa.Controller.toggle(returnTo); },
             _dlHelper: true
         });
+
+        // Fetch sizes in background and update
+        items.forEach(function(item, index) {
+            fetchFileSize(item.url, function(size) {
+                var sizeText = size > 0 ? formatBytes(size) : 'Unknown size';
+                // Update the item subtitle
+                items[index].subtitle = sizeText;
+                // Try to update displayed element
+                try {
+                    var elements = document.querySelectorAll('.selectbox .selectbox-item');
+                    if (elements[index]) {
+                        var subtitle = elements[index].querySelector('.selectbox-item__subtitle');
+                        if (subtitle) subtitle.textContent = sizeText;
+                    }
+                } catch(e) {}
+            });
+        });
+    }
+
+    // ========== HELPER: Parse URL/Quality ==========
+    function parseStreamData(data, defaultQuality) {
+        var results = [];
+
+        // If it's a string URL
+        if (typeof data === 'string' && data.indexOf('http') === 0) {
+            results.push({ url: data, quality: defaultQuality || 'Video' });
+        }
+        // If it's an object with quality -> URL mapping
+        else if (typeof data === 'object' && data !== null) {
+            Object.keys(data).forEach(function(key) {
+                var val = data[key];
+                if (typeof val === 'string' && val.indexOf('http') === 0) {
+                    results.push({ url: val, quality: key });
+                }
+            });
+        }
+
+        return results;
     }
 
     // ========== PLAYER BUTTON ==========
@@ -160,36 +226,43 @@
         var streams = [];
 
         try {
-            // Try to get streams from player data
             var pd = Lampa.Player.playdata();
             if (pd) {
-                // Current URL
+                // Parse pd.url - might be string or object
                 if (pd.url) {
-                    streams.push({ url: pd.url, quality: pd.quality || 'Current' });
-                }
-
-                // Check for playlist/streams array
-                if (pd.playlist && Array.isArray(pd.playlist)) {
-                    pd.playlist.forEach(function(p) {
-                        if (p.url && streams.every(function(s) { return s.url !== p.url; })) {
-                            streams.push({ url: p.url, quality: p.quality || p.title || 'Video' });
+                    var parsed = parseStreamData(pd.url, pd.quality || 'Current');
+                    parsed.forEach(function(p) {
+                        if (streams.every(function(s) { return s.url !== p.url; })) {
+                            streams.push(p);
                         }
                     });
                 }
 
-                // Check for urls object (quality -> url mapping)
-                if (pd.urls && typeof pd.urls === 'object') {
-                    Object.keys(pd.urls).forEach(function(q) {
-                        var u = pd.urls[q];
-                        if (u && streams.every(function(s) { return s.url !== u; })) {
-                            streams.push({ url: u, quality: q });
+                // Check for urls object
+                if (pd.urls) {
+                    var parsed2 = parseStreamData(pd.urls, 'Video');
+                    parsed2.forEach(function(p) {
+                        if (streams.every(function(s) { return s.url !== p.url; })) {
+                            streams.push(p);
                         }
+                    });
+                }
+
+                // Check for playlist
+                if (pd.playlist && Array.isArray(pd.playlist)) {
+                    pd.playlist.forEach(function(item) {
+                        var parsed3 = parseStreamData(item.url || item, item.title || item.quality || 'Video');
+                        parsed3.forEach(function(p) {
+                            if (streams.every(function(s) { return s.url !== p.url; })) {
+                                streams.push(p);
+                            }
+                        });
                     });
                 }
             }
         } catch (e) {}
 
-        // Fallback: get from video element
+        // Fallback: video element
         if (streams.length === 0) {
             try {
                 var v = document.querySelector('video');
@@ -199,11 +272,11 @@
             } catch (e) {}
         }
 
-        // Add captured streams if any
+        // Add captured streams
         if (capturedStreams && capturedStreams.length > 0) {
             capturedStreams.forEach(function(s) {
-                if (s.url && streams.every(function(x) { return x.url !== s.url; })) {
-                    streams.push(s);
+                if (s.url && typeof s.url === 'string' && streams.every(function(x) { return x.url !== s.url; })) {
+                    streams.push({ url: s.url, quality: typeof s.quality === 'string' ? s.quality : 'Captured' });
                 }
             });
         }
