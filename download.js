@@ -270,6 +270,44 @@
         Lampa.Noty.show('Opening player...');
     }
 
+    // Open URL in 1DM/IDM with custom filename
+    function openIn1DM(url, filename) {
+        // 1DM intent format with extra_filename
+        // Package: idm.internet.download.manager.plus (1DM+) or idm.internet.download.manager (1DM)
+        const packages = [
+            'idm.internet.download.manager.plus',
+            'idm.internet.download.manager',
+            'idm.internet.download.manager.adm.lite'
+        ];
+
+        // Try each package
+        for (const pkg of packages) {
+            const intentUrl = `intent:${url}#Intent;action=android.intent.action.VIEW;package=${pkg};S.extra_filename=${encodeURIComponent(filename)};end`;
+            try {
+                window.location.href = intentUrl;
+                Lampa.Noty.show('Opening 1DM...');
+                return true;
+            } catch (_) { /* continue to next package */ }
+        }
+
+        return false;
+    }
+
+    // Open URL in YTDLnis app
+    function openInYtdlnis(url, filename) {
+        // YTDLnis intent - note: COMMAND extra was removed for security
+        // We can only pass URL and TYPE, not custom filename
+        const intentUrl = `intent:${url}#Intent;action=android.intent.action.SEND;package=com.deniscerri.ytdl;type=text/*;S.android.intent.extra.TEXT=${encodeURIComponent(url)};S.TYPE=video;end`;
+
+        try {
+            window.location.href = intentUrl;
+            Lampa.Noty.show('Opening YTDLnis...');
+            return true;
+        } catch (_) { /* ignore */ }
+
+        return false;
+    }
+
     // ========== GET FILE SIZE (with cache) ==========
     function getFileSize(url, callback) {
         if (sizeCache[url] !== undefined) {
@@ -311,25 +349,19 @@
         if (androidAvailable) {
             const subText = subtitles.length > 0 ? ` + ${subtitles.length} sub` : '';
 
-            // Share to Seal/other apps (works for both MP4 and HLS)
-            if (Lampa.Android?.share) {
-                items.push({ title: 'Share to Seal / 1DM', subtitle: 'Рекомендовано', id: 'share' });
-            }
-
             if (isHls) {
-                // HLS options
-                items.push({ title: 'ADM / 1DM (HLS)', subtitle: 'Може не працювати', id: 'download' });
-                items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
+                // HLS options - direct URL extraction
+                const directUrl = extractDirectUrl(url) || url;
 
-                // Check if URL is proxied and offer direct URL
-                const directUrl = extractDirectUrl(url);
-                if (directUrl && directUrl !== url) {
-                    items.push({ title: 'Copy Direct URL', subtitle: 'Без проксі', id: 'direct', directUrl });
-                }
+                items.push({ title: '1DM (Download)', subtitle: filename + '.mp4', id: '1dm', directUrl });
+                items.push({ title: 'YTDLnis', subtitle: 'Без назви файлу', id: 'ytdlnis', directUrl });
+                items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
+                items.push({ title: 'Copy yt-dlp command', subtitle: 'For Termux', id: 'ytdlp', directUrl });
             } else {
                 // Direct MP4 options
-                items.push({ title: 'Download (ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
-                items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
+                items.push({ title: '1DM (Download)', subtitle: filename + '.mp4' + sizeText + subText, id: '1dm' });
+                items.push({ title: 'ADM (Download)', subtitle: 'Alternative', id: 'download' });
+                items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
             }
         }
 
@@ -340,16 +372,21 @@
             items,
             onSelect: function(item) {
                 Lampa.Select.close();
-                if (item.id === 'share') {
-                    Lampa.Android.share(url);
-                    Lampa.Noty.show('Оберіть Seal або 1DM');
-                } else if (item.id === 'download') {
+                if (item.id === 'download') {
                     doDownload(url, filename, subtitles);
+                } else if (item.id === '1dm') {
+                    const dlUrl = item.directUrl || url;
+                    openIn1DM(dlUrl, filename + '.mp4');
+                } else if (item.id === 'ytdlnis') {
+                    const dlUrl = item.directUrl || url;
+                    openInYtdlnis(dlUrl, filename);
                 } else if (item.id === 'external') {
                     doExternal(url, filename);
-                } else if (item.id === 'direct') {
-                    copyToClipboard(item.directUrl);
-                    Lampa.Noty.show('Direct URL copied!');
+                } else if (item.id === 'ytdlp') {
+                    const cmdUrl = item.directUrl || url;
+                    const cmd = `yt-dlp "${cmdUrl}" -o "${filename}.mp4"`;
+                    copyToClipboard(cmd);
+                    Lampa.Noty.show('yt-dlp command copied!');
                 } else if (item.id === 'copy') {
                     copyToClipboard(url);
                     Lampa.Noty.show('URL copied!');
