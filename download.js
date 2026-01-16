@@ -173,6 +173,27 @@
         } catch (_) { return []; }
     }
 
+    // ========== EXTRACT DIRECT URL FROM PROXY ==========
+    function extractDirectUrl(url) {
+        if (!url) return null;
+        // Pattern: proxy.php?url=<encoded_url>
+        const proxyMatch = url.match(/proxy\.php\?url=([^&]+)/);
+        if (proxyMatch) {
+            try {
+                return decodeURIComponent(proxyMatch[1]);
+            } catch (_) { return null; }
+        }
+        // Pattern: ?url=<encoded_url> (generic)
+        const urlMatch = url.match(/[?&]url=([^&]+)/);
+        if (urlMatch) {
+            try {
+                const decoded = decodeURIComponent(urlMatch[1]);
+                if (decoded.startsWith('http')) return decoded;
+            } catch (_) { return null; }
+        }
+        return null;
+    }
+
     // ========== EXTRACT QUALITY FROM URL ==========
     function extractQualityFromUrl(url) {
         if (!url) return null;
@@ -295,6 +316,12 @@
                 items.push({ title: 'ADM / 1DM (HLS)', subtitle: 'Може не працювати', id: 'download' });
                 items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
                 items.push({ title: 'Copy yt-dlp command', subtitle: 'Для Termux / Seal', id: 'ytdlp' });
+
+                // Check if URL is proxied and offer direct URL
+                const directUrl = extractDirectUrl(url);
+                if (directUrl && directUrl !== url) {
+                    items.push({ title: 'Copy Direct URL', subtitle: 'Без проксі', id: 'direct', directUrl });
+                }
             } else {
                 // Direct MP4 options
                 items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
@@ -309,22 +336,19 @@
             items,
             onSelect: function(item) {
                 Lampa.Select.close();
-                switch (item.id) {
-                    case 'download':
-                        doDownload(url, filename, subtitles);
-                        break;
-                    case 'external':
-                        doExternal(url, filename);
-                        break;
-                    case 'ytdlp':
-                        const cmd = `yt-dlp "${url}" -o "${filename}.mp4"`;
-                        copyToClipboard(cmd);
-                        Lampa.Noty.show('yt-dlp command copied!');
-                        break;
-                    case 'copy':
-                        copyToClipboard(url);
-                        Lampa.Noty.show('Copied!');
-                        break;
+                if (item.id === 'download') {
+                    doDownload(url, filename, subtitles);
+                } else if (item.id === 'external') {
+                    doExternal(url, filename);
+                } else if (item.id === 'ytdlp') {
+                    copyToClipboard(`yt-dlp "${url}" -o "${filename}.mp4"`);
+                    Lampa.Noty.show('yt-dlp command copied!');
+                } else if (item.id === 'direct') {
+                    copyToClipboard(item.directUrl);
+                    Lampa.Noty.show('Direct URL copied!');
+                } else if (item.id === 'copy') {
+                    copyToClipboard(url);
+                    Lampa.Noty.show('URL copied!');
                 }
                 Lampa.Controller.toggle(returnTo);
             },
