@@ -289,9 +289,17 @@
 
         if (androidAvailable) {
             const subText = subtitles.length > 0 ? ` + ${subtitles.length} sub` : '';
-            const ext = isHls ? '.m3u8' : '.mp4';
-            items.push({ title: 'Download', subtitle: filename + ext + sizeText + subText, id: 'download' });
-            items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
+
+            if (isHls) {
+                // HLS options
+                items.push({ title: 'ADM / 1DM (HLS)', subtitle: 'Може не працювати', id: 'download' });
+                items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
+                items.push({ title: 'Copy yt-dlp command', subtitle: 'Для Termux / Seal', id: 'ytdlp' });
+            } else {
+                // Direct MP4 options
+                items.push({ title: 'Download', subtitle: filename + '.mp4' + sizeText + subText, id: 'download' });
+                items.push({ title: 'External Player', subtitle: 'VLC, MX Player', id: 'external' });
+            }
         }
 
         items.push({ title: 'Copy URL', subtitle: url.substring(0, 40) + '...', id: 'copy' });
@@ -307,6 +315,11 @@
                         break;
                     case 'external':
                         doExternal(url, filename);
+                        break;
+                    case 'ytdlp':
+                        const cmd = `yt-dlp "${url}" -o "${filename}.mp4"`;
+                        copyToClipboard(cmd);
+                        Lampa.Noty.show('yt-dlp command copied!');
                         break;
                     case 'copy':
                         copyToClipboard(url);
