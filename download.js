@@ -534,7 +534,20 @@
         filename = parts.filter(function(p) { return p; }).join(' - ').replace(/[<>:"/\\|?*]/g, '').trim();
         if (!filename) filename = (title || 'video').replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
 
+        // Debug: check URL
+        if (!url || typeof url !== 'string') {
+            Lampa.Noty.show('ERROR: Invalid URL');
+            return;
+        }
+
         var items = [];
+
+        // Debug item to show URL
+        items.push({
+            title: '🔗 Show URL',
+            subtitle: url.substring(0, 40) + '...',
+            id: 'debug_url'
+        });
 
         if (androidAvailable) {
             items.push({ title: 'Download with ADM', subtitle: filename + '.mp4', id: 'adm' });
@@ -546,10 +559,31 @@
         items.push({ title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' });
 
         Lampa.Select.show({
-            title: 'Download: ' + title.substring(0, 30),
+            title: 'Download: ' + (title || 'video').substring(0, 30),
             items: items,
             onSelect: function(item) {
                 Lampa.Select.close();
+
+                if (item.id === 'debug_url') {
+                    // Show full URL in a dialog
+                    Lampa.Select.show({
+                        title: 'URL Debug',
+                        items: [
+                            { title: 'URL: ' + url.substring(0, 60) },
+                            { title: 'Filename: ' + filename },
+                            { title: 'Copy URL', id: 'copy_debug' }
+                        ],
+                        onSelect: function(sel) {
+                            if (sel.id === 'copy_debug') {
+                                copyToClipboard(url);
+                                Lampa.Noty.show('URL copied!');
+                            }
+                            Lampa.Select.close();
+                        },
+                        onBack: function() { Lampa.Controller.toggle('content'); }
+                    });
+                    return;
+                }
 
                 if (item.id === 'adm') {
                     var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
