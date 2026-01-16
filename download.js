@@ -276,15 +276,37 @@
                     // Check for file() function
                     if (typeof item.file === 'function') {
                         try {
-                            var url = item.file();
-                            if (url && url.indexOf('http') === 0) {
-                                streams.push({ url: url, quality: item.title || item.quality || '' });
+                            var result = item.file();
+
+                            // Result is a direct URL string
+                            if (typeof result === 'string' && result.indexOf('http') === 0) {
+                                streams.push({ url: result, quality: item.title || '' });
+                            }
+                            // Result is an object with quality -> URL mapping
+                            else if (typeof result === 'object' && result !== null) {
+                                Object.keys(result).forEach(function(quality) {
+                                    var url = result[quality];
+                                    if (typeof url === 'string' && url.indexOf('http') === 0) {
+                                        streams.push({ url: url, quality: quality });
+                                    }
+                                });
                             }
                         } catch(e) {}
                     }
+
                     // Check for direct url property
                     if (item.url && typeof item.url === 'string' && item.url.indexOf('http') === 0) {
-                        streams.push({ url: item.url, quality: item.title || item.quality || '' });
+                        streams.push({ url: item.url, quality: item.title || '' });
+                    }
+
+                    // Check for urls object property (quality -> url mapping)
+                    if (item.urls && typeof item.urls === 'object') {
+                        Object.keys(item.urls).forEach(function(quality) {
+                            var url = item.urls[quality];
+                            if (typeof url === 'string' && url.indexOf('http') === 0) {
+                                streams.push({ url: url, quality: quality });
+                            }
+                        });
                     }
                 });
 
