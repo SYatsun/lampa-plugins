@@ -36,34 +36,90 @@
         return null;
     }
 
-    // Try to get master playlist or original source URL for quality selection
-    function getSourceUrl() {
+    // Store available qualities from Lampa events
+    var availableQualities = [];
+
+    // Try to get all available quality URLs
+    function getQualities() {
+        var qualities = [];
+
         try {
+            // Try to get from player data
             var pd = Lampa.Player.playdata();
-            // Check for master/original URL in playdata
             if (pd) {
-                // Try different possible locations for master URL
-                if (pd.master) return pd.master;
-                if (pd.original) return pd.original;
-                if (pd.source) return pd.source;
-                if (pd.playlist) return pd.playlist;
-                // Log available keys for debugging
                 console.log('[DLHelper] playdata keys:', Object.keys(pd).join(', '));
-                console.log('[DLHelper] playdata:', JSON.stringify(pd).substring(0, 500));
-            }
-        } catch (e) {}
 
-        // Try to get from active stream/source
+                // Check for quality/qualities array
+                if (pd.qualities && Array.isArray(pd.qualities)) {
+                    pd.qualities.forEach(function(q) {
+                        if (q.url) qualities.push({ label: q.label || q.quality || 'Unknown', url: q.url });
+                    });
+                }
+
+                // Check for quality object with URLs
+                if (pd.quality && typeof pd.quality === 'object') {
+                    for (var key in pd.quality) {
+                        if (pd.quality[key] && typeof pd.quality[key] === 'string') {
+                            qualities.push({ label: key, url: pd.quality[key] });
+                        }
+                    }
+                }
+
+                // Check for streams array
+                if (pd.streams && Array.isArray(pd.streams)) {
+                    pd.streams.forEach(function(s) {
+                        if (s.url) qualities.push({ label: s.label || s.quality || 'Stream', url: s.url });
+                    });
+                }
+            }
+        } catch (e) {
+            console.log('[DLHelper] Error getting qualities:', e);
+        }
+
+        // Also check stored qualities from events
+        if (availableQualities.length > 0) {
+            qualities = qualities.concat(availableQualities);
+        }
+
+        // Remove duplicates
+        var seen = {};
+        qualities = qualities.filter(function(q) {
+            if (seen[q.url]) return false;
+            seen[q.url] = true;
+            return true;
+        });
+
+        return qualities;
+    }
+
+    // Hook to capture quality data when source loads
+    function captureQualities(data) {
+        availableQualities = [];
         try {
-            var activity = Lampa.Activity.active();
-            if (activity && activity.stream) {
-                console.log('[DLHelper] stream:', JSON.stringify(activity.stream).substring(0, 500));
-                if (activity.stream.url) return activity.stream.url;
+            if (data && data.quality) {
+                for (var key in data.quality) {
+                    if (data.quality[key]) {
+                        availableQualities.push({ label: key, url: data.quality[key] });
+                    }
+                }
             }
-        } catch (e) {}
-
-        // Fallback to current playing URL
-        return getVideoUrl();
+            if (data && data.file) {
+                // Sometimes qualities are in 'file' as comma-separated or array
+                if (typeof data.file === 'string' && data.file.indexOf(',') > -1) {
+                    // Parse "[720p]url,[480p]url" format
+                    var parts = data.file.split(',');
+                    parts.forEach(function(p) {
+                        var match = p.match(/\[([^\]]+)\](.*)/);
+                        if (match) {
+                            availableQualities.push({ label: match[1], url: match[2] });
+                        }
+                    });
+                }
+            }
+            console.log('[DLHelper] Captured qualities:', availableQualities.length);
+        } catch (e) {
+            console.log('[DLHelper] Error capturing qualities:', e);
+        }
     }
 
     function getTitle() {
@@ -119,14 +175,16 @@
 
         var items = [];
 
+        // Always show quality selector first
+        items.push({ title: 'Select Quality', subtitle: 'Choose resolution before download', id: 'quality' });
+
         if (androidAvailable) {
-            items.push({ title: 'Download with 1DM', subtitle: 'With filename', id: '1dm' });
-            items.push({ title: 'Download with DVGet', subtitle: 'With filename', id: 'dvget' });
+            items.push({ title: 'Download with 1DM', subtitle: 'Current quality + filename', id: '1dm' });
+            items.push({ title: 'Download with DVGet', subtitle: 'Current quality + filename', id: 'dvget' });
             items.push({ title: 'Open with External App', subtitle: 'VLC, MX Player...', id: 'external' });
         }
 
-        items.push({ title: 'Copy for YTDLnis/Seal', subtitle: 'Paste in app for quality select', id: 'ytdlnis' });
-        items.push({ title: 'Copy URL only', subtitle: 'Manual paste', id: 'copy' });
+        items.push({ title: 'Copy URL (current quality)', subtitle: 'Manual paste', id: 'copy' });
 
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
@@ -134,16 +192,35 @@
             onSelect: function (item) {
                 Lampa.Select.close();
 
-                if (item.id === 'ytdlnis') {
-                    // Copy URL for YTDLnis/Seal - they handle quality selection
-                    // Always use the direct URL string, not objects
-                    var copyUrl = url;
-                    if (typeof copyUrl === 'object') {
-                        copyUrl = copyUrl.url || copyUrl.src || JSON.stringify(copyUrl);
+                if (item.id === 'quality') {
+                    // Show quality selector
+                    var qualities = getQualities();
+                    console.log('[DLHelper] Found qualities:', qualities.length, qualities);
+
+                    if (qualities.length === 0) {
+                        // No qualities found, copy current URL
+                        copyToClipboard(url);
+                        Lampa.Noty.show('No qualities found. Current URL copied!');
+                        return;
                     }
-                    copyToClipboard(copyUrl);
-                    console.log('[DLHelper] Copied URL:', copyUrl);
-                    Lampa.Noty.show('URL copied! Open YTDLnis/Seal and paste');
+
+                    // Show quality selection menu
+                    var qualityItems = qualities.map(function(q) {
+                        return { title: q.label, url: q.url };
+                    });
+
+                    Lampa.Select.show({
+                        title: 'Select Quality',
+                        items: qualityItems,
+                        onSelect: function(selected) {
+                            Lampa.Select.close();
+                            copyToClipboard(selected.url);
+                            Lampa.Noty.show(selected.title + ' URL copied!');
+                        },
+                        onBack: function() {
+                            showMenu(); // Go back to main menu
+                        }
+                    });
                 } else if (item.id === 'external') {
                     try {
                         // Copy title to clipboard for manual paste
@@ -211,15 +288,36 @@
     function startPlugin() {
         window.lampa_download_helper = true;
 
+        // Capture quality data when source loads
         Lampa.Listener.follow('full', function (e) {
-            if (e.type === 'complite') setTimeout(addButton, 500);
+            if (e.type === 'complite') {
+                setTimeout(addButton, 500);
+            }
+            // Try to capture quality data from various event types
+            if (e.data) {
+                captureQualities(e.data);
+            }
         });
 
+        // Also try to capture from player events
         if (Lampa.Player && Lampa.Player.listener) {
-            Lampa.Player.listener.follow('start', function () {
+            Lampa.Player.listener.follow('start', function (data) {
                 setTimeout(addButton, 500);
+                if (data) captureQualities(data);
+            });
+
+            // Capture quality change events
+            Lampa.Player.listener.follow('quality', function (data) {
+                console.log('[DLHelper] Quality event:', data);
+                if (data) captureQualities(data);
             });
         }
+
+        // Hook into video source selection
+        Lampa.Listener.follow('video', function (e) {
+            console.log('[DLHelper] Video event:', e.type, e.data ? Object.keys(e.data) : 'no data');
+            if (e.data) captureQualities(e.data);
+        });
 
     }
 
