@@ -28,6 +28,36 @@
         return null;
     }
 
+    // Try to get master playlist or original source URL for quality selection
+    function getSourceUrl() {
+        try {
+            var pd = Lampa.Player.playdata();
+            // Check for master/original URL in playdata
+            if (pd) {
+                // Try different possible locations for master URL
+                if (pd.master) return pd.master;
+                if (pd.original) return pd.original;
+                if (pd.source) return pd.source;
+                if (pd.playlist) return pd.playlist;
+                // Log available keys for debugging
+                console.log('[DLHelper] playdata keys:', Object.keys(pd).join(', '));
+                console.log('[DLHelper] playdata:', JSON.stringify(pd).substring(0, 500));
+            }
+        } catch (e) {}
+
+        // Try to get from active stream/source
+        try {
+            var activity = Lampa.Activity.active();
+            if (activity && activity.stream) {
+                console.log('[DLHelper] stream:', JSON.stringify(activity.stream).substring(0, 500));
+                if (activity.stream.url) return activity.stream.url;
+            }
+        } catch (e) {}
+
+        // Fallback to current playing URL
+        return getVideoUrl();
+    }
+
     function getTitle() {
         // Try player info (includes episode info)
         var el = document.querySelector('.player-info__name');
@@ -82,9 +112,10 @@
         var items = [];
 
         if (androidAvailable) {
-            items.push({ title: 'Open with External App', subtitle: 'YTDLnis, Seal, VLC...', id: 'external' });
-            items.push({ title: 'Download with 1DM', subtitle: 'With filename (if installed)', id: '1dm' });
-            items.push({ title: 'Download with DVGet', subtitle: 'With filename (if installed)', id: 'dvget' });
+            items.push({ title: 'YTDLnis (Select Quality)', subtitle: 'Best for quality selection', id: 'ytdlnis' });
+            items.push({ title: 'Download with 1DM', subtitle: 'With filename', id: '1dm' });
+            items.push({ title: 'Download with DVGet', subtitle: 'With filename', id: 'dvget' });
+            items.push({ title: 'Open with External App', subtitle: 'VLC, MX Player...', id: 'external' });
         }
 
         items.push({ title: 'Copy URL', subtitle: 'Paste in download app', id: 'copy' });
@@ -95,7 +126,18 @@
             onSelect: function (item) {
                 Lampa.Select.close();
 
-                if (item.id === 'external') {
+                if (item.id === 'ytdlnis') {
+                    try {
+                        // Use source URL for quality selection in YTDLnis
+                        var sourceUrl = getSourceUrl() || url;
+                        copyToClipboard(title);
+                        Lampa.Android.openPlayer(sourceUrl, JSON.stringify({ title: title }));
+                        Lampa.Noty.show('Select quality in YTDLnis. Title copied!');
+                    } catch (e) {
+                        copyToClipboard(url);
+                        Lampa.Noty.show('Error: ' + e.message);
+                    }
+                } else if (item.id === 'external') {
                     try {
                         // Copy title to clipboard for manual paste
                         copyToClipboard(title);
