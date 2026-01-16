@@ -19,11 +19,19 @@
     function getVideoUrl() {
         try {
             var pd = Lampa.Player.playdata();
-            if (pd && pd.url && pd.url.indexOf('http') === 0) return pd.url;
+            if (pd && pd.url) {
+                var videoUrl = pd.url;
+                // Ensure we have a string
+                if (typeof videoUrl === 'string' && videoUrl.indexOf('http') === 0) {
+                    return videoUrl;
+                }
+            }
         } catch (e) {}
         try {
             var v = document.querySelector('video');
-            if (v && v.src && v.src.indexOf('blob:') !== 0) return v.src;
+            if (v && v.src && typeof v.src === 'string' && v.src.indexOf('blob:') !== 0) {
+                return v.src;
+            }
         } catch (e) {}
         return null;
     }
@@ -127,9 +135,14 @@
                 Lampa.Select.close();
 
                 if (item.id === 'ytdlnis') {
-                    // Copy source URL for YTDLnis/Seal - they handle quality selection
-                    var sourceUrl = getSourceUrl() || url;
-                    copyToClipboard(sourceUrl);
+                    // Copy URL for YTDLnis/Seal - they handle quality selection
+                    // Always use the direct URL string, not objects
+                    var copyUrl = url;
+                    if (typeof copyUrl === 'object') {
+                        copyUrl = copyUrl.url || copyUrl.src || JSON.stringify(copyUrl);
+                    }
+                    copyToClipboard(copyUrl);
+                    console.log('[DLHelper] Copied URL:', copyUrl);
                     Lampa.Noty.show('URL copied! Open YTDLnis/Seal and paste');
                 } else if (item.id === 'external') {
                     try {
