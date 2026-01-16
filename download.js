@@ -39,6 +39,9 @@
     // Store available qualities from Lampa events
     var availableQualities = [];
 
+    // Store card data when source is selected (before player starts)
+    var savedCard = null;
+
     // Try to get all available quality URLs
     function getQualities() {
         var qualities = [];
@@ -130,22 +133,21 @@
         var card = null;
         var pd = null;
 
-        // Get card data from Activity (current or stack)
+        // Get card data from multiple sources
         try {
-            var a = Lampa.Activity.active();
-            if (a && a.card) {
-                card = a.card;
-            } else {
-                // Search Activity stack for card (series name is often there)
-                var stack = Lampa.Activity.stack();
-                if (stack && stack.length > 0) {
-                    for (var i = stack.length - 1; i >= 0; i--) {
-                        if (stack[i].card) {
-                            card = stack[i].card;
-                            break;
-                        }
-                    }
-                }
+            // 1. Try saved card (captured when source was selected)
+            if (savedCard) {
+                card = savedCard;
+            }
+            // 2. Try Activity.active()
+            if (!card) {
+                var a = Lampa.Activity.active();
+                if (a && a.card) card = a.card;
+            }
+            // 3. Try Lampa.Storage.get('activity')
+            if (!card) {
+                var act = Lampa.Storage.get('activity', {});
+                if (act && act.card) card = act.card;
             }
         } catch (e) {}
 
@@ -320,55 +322,42 @@
                     // Show debug info
                     var debugInfo = [];
 
-                    // Check Activity stack - show all items
-                    try {
-                        var stack = Lampa.Activity.stack();
-                        debugInfo.push('STACK.len: ' + (stack ? stack.length : 0));
-                        if (stack && stack.length > 0) {
-                            stack.forEach(function(item, idx) {
-                                var info = 'ST[' + idx + ']: ' + (item.component || '?');
-                                if (item.card) {
-                                    info += ' card=' + (item.card.title || item.card.name || '?');
-                                }
-                                debugInfo.push(info);
-                            });
-                        }
-                    } catch(e) { debugInfo.push('STACK: err ' + e.message); }
+                    // Check savedCard (captured when source selected)
+                    debugInfo.push('SAVED: ' + (savedCard ? (savedCard.title || savedCard.name || 'obj') : 'null'));
 
-                    // Check playdata - show ALL keys
+                    // Check Activity.active()
+                    try {
+                        var a = Lampa.Activity.active();
+                        debugInfo.push('ACT: ' + (a ? a.component : 'null'));
+                        if (a && a.card) {
+                            debugInfo.push('ACT.card: ' + (a.card.title || a.card.name));
+                        }
+                    } catch(e) {}
+
+                    // Check playdata
                     try {
                         var pd = Lampa.Player.playdata();
                         if (pd) {
                             debugInfo.push('PD.keys: ' + Object.keys(pd).join(','));
                             debugInfo.push('PD.title: ' + (pd.title || 'none'));
                             debugInfo.push('PD.season: ' + (pd.season || 'none'));
-                            debugInfo.push('PD.episode: ' + (pd.episode || 'none'));
-                            // Check if pd.card exists
-                            if (pd.card) {
-                                debugInfo.push('PD.card: ' + (pd.card.title || pd.card.name || 'obj'));
-                            }
                         }
-                    } catch(e) { debugInfo.push('PD: error'); }
+                    } catch(e) {}
 
-                    // Check Lampa.Storage for multiple keys
-                    var storageKeys = ['movie', 'card', 'playlist', 'online_last_balanser', 'source'];
+                    // Check Lampa.Storage
+                    var storageKeys = ['activity', 'movie', 'card'];
                     storageKeys.forEach(function(key) {
                         try {
                             var val = Lampa.Storage.get(key, null);
                             if (val) {
-                                if (val.title || val.name) {
+                                if (val.card) {
+                                    debugInfo.push('STOR.' + key + '.card: ' + (val.card.title || val.card.name));
+                                } else if (val.title || val.name) {
                                     debugInfo.push('STOR.' + key + ': ' + (val.title || val.name));
-                                } else if (typeof val === 'object') {
-                                    debugInfo.push('STOR.' + key + ': ' + Object.keys(val).slice(0, 5).join(','));
                                 }
                             }
                         } catch(e) {}
                     });
-
-                    // Check window globals that plugins might set
-                    if (window.lampa_source_card) {
-                        debugInfo.push('WIN.source_card: ' + (window.lampa_source_card.title || 'obj'));
-                    }
 
                     debugInfo.push('FILENAME: ' + getFilename('720p'));
 
@@ -479,11 +468,19 @@
     function startPlugin() {
         window.lampa_download_helper = true;
 
-        // Capture quality data when source loads
+        // Capture card data when full page loads (before player)
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite') {
                 setTimeout(addButton, 500);
             }
+            // Capture card from full activity
+            try {
+                var a = Lampa.Activity.active();
+                if (a && a.card) {
+                    savedCard = a.card;
+                    console.log('[DLHelper] Saved card:', savedCard.title || savedCard.name);
+                }
+            } catch(err) {}
             // Try to capture quality data from various event types
             if (e.data) {
                 captureQualities(e.data);
