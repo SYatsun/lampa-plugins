@@ -314,8 +314,37 @@
     // Copy URL and filename for manual paste
     function copyForDownload(url, filename) {
         copyToClipboard(url);
-        Lampa.Noty.show('URL copied! Paste in 1DM/ADM. Filename: ' + filename);
+        Lampa.Noty.show('URL copied! Open 1DM');
+        setTimeout(() => {
+            Lampa.Noty.show('Filename: ' + filename, true);
+        }, 1500);
         return true;
+    }
+
+    // Share URL to external app (1DM, etc.)
+    function shareToApp(url, filename) {
+        // Web Share API - opens Android share sheet
+        if (navigator.share) {
+            navigator.share({
+                title: filename,
+                text: filename,
+                url: url
+            }).then(() => {
+                Lampa.Noty.show('Select 1DM to open');
+            }).catch((err) => {
+                // User cancelled or error - fallback to copy
+                if (err.name !== 'AbortError') {
+                    copyToClipboard(url);
+                    Lampa.Noty.show('URL copied! Open 1DM Browser manually');
+                }
+            });
+            return true;
+        }
+
+        // Fallback: copy URL
+        copyToClipboard(url);
+        Lampa.Noty.show('URL copied! Open 1DM Browser');
+        return false;
     }
 
     // ========== GET FILE SIZE (with cache) ==========
@@ -363,10 +392,10 @@
                 // HLS options - direct URL extraction
                 const directUrl = extractDirectUrl(url) || url;
 
-                items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4', id: 'dlmanager', directUrl });
+                items.push({ title: '📤 Share → 1DM', subtitle: 'Open in 1DM Browser', id: 'share1dm', directUrl });
+                items.push({ title: 'Copy URL', subtitle: 'For 1DM Smart Download', id: 'copyurl', directUrl });
+                items.push({ title: 'Copy Filename', subtitle: filename + '.mp4', id: 'copyname' });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
-                items.push({ title: 'Copy URL + Filename', subtitle: 'Manual paste', id: 'copyurl', directUrl });
-                items.push({ title: 'Copy yt-dlp command', subtitle: 'For Termux', id: 'ytdlp', directUrl });
             } else {
                 // Direct MP4 options
                 items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'dlmanager' });
@@ -383,15 +412,21 @@
                 Lampa.Select.close();
                 if (item.id === 'download') {
                     doDownload(url, filename, subtitles);
+                } else if (item.id === 'share1dm') {
+                    const dlUrl = item.directUrl || url;
+                    shareToApp(dlUrl, filename + '.mp4');
                 } else if (item.id === 'dlmanager') {
                     const dlUrl = item.directUrl || url;
-                    // Try to open in download manager, fallback to copy
                     if (!openExternalDownloader(dlUrl, filename + '.mp4')) {
                         copyForDownload(dlUrl, filename + '.mp4');
                     }
+                } else if (item.id === 'copyname') {
+                    copyToClipboard(filename + '.mp4');
+                    Lampa.Noty.show('Filename copied!');
                 } else if (item.id === 'copyurl') {
                     const dlUrl = item.directUrl || url;
-                    copyForDownload(dlUrl, filename + '.mp4');
+                    copyToClipboard(dlUrl);
+                    Lampa.Noty.show('URL copied!');
                 } else if (item.id === 'external') {
                     doExternal(url, filename);
                 } else if (item.id === 'ytdlp') {
