@@ -112,13 +112,13 @@
         var items = [];
 
         if (androidAvailable) {
-            items.push({ title: 'YTDLnis (Select Quality)', subtitle: 'Best for quality selection', id: 'ytdlnis' });
             items.push({ title: 'Download with 1DM', subtitle: 'With filename', id: '1dm' });
             items.push({ title: 'Download with DVGet', subtitle: 'With filename', id: 'dvget' });
             items.push({ title: 'Open with External App', subtitle: 'VLC, MX Player...', id: 'external' });
         }
 
-        items.push({ title: 'Copy URL', subtitle: 'Paste in download app', id: 'copy' });
+        items.push({ title: 'Copy for YTDLnis/Seal', subtitle: 'Paste in app for quality select', id: 'ytdlnis' });
+        items.push({ title: 'Copy URL only', subtitle: 'Manual paste', id: 'copy' });
 
         Lampa.Select.show({
             title: 'Download: ' + title.substring(0, 25),
@@ -127,16 +127,10 @@
                 Lampa.Select.close();
 
                 if (item.id === 'ytdlnis') {
-                    try {
-                        // Use source URL for quality selection in YTDLnis
-                        var sourceUrl = getSourceUrl() || url;
-                        copyToClipboard(title);
-                        Lampa.Android.openPlayer(sourceUrl, JSON.stringify({ title: title }));
-                        Lampa.Noty.show('Select quality in YTDLnis. Title copied!');
-                    } catch (e) {
-                        copyToClipboard(url);
-                        Lampa.Noty.show('Error: ' + e.message);
-                    }
+                    // Copy source URL for YTDLnis/Seal - they handle quality selection
+                    var sourceUrl = getSourceUrl() || url;
+                    copyToClipboard(sourceUrl);
+                    Lampa.Noty.show('URL copied! Open YTDLnis/Seal and paste');
                 } else if (item.id === 'external') {
                     try {
                         // Copy title to clipboard for manual paste
