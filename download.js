@@ -961,6 +961,32 @@
                     }
                 }
 
+                // If pending download but no quality items found - show debug
+                if (pendingDownload && !hasQualityItems) {
+                    var debugItems = [];
+                    debugItems.push({ title: 'Menu title: ' + (params.title || 'none') });
+                    debugItems.push({ title: 'Items count: ' + params.items.length });
+                    params.items.forEach(function(item, idx) {
+                        var keys = Object.keys(item).join(',');
+                        debugItems.push({ title: 'Item' + idx + ': ' + (item.title || '').substring(0, 25) });
+                        debugItems.push({ title: '  Keys: ' + keys });
+                        if (item.copylink) debugItems.push({ title: '  copylink: YES' });
+                        if (item.url) debugItems.push({ title: '  url: YES' });
+                    });
+
+                    var epInfo2 = pendingDownload.episodeInfo;
+                    var videoTitle2 = pendingDownload.videoTitle;
+                    pendingDownload = null;
+
+                    Lampa.Select.show({
+                        title: 'Debug: Quality Menu',
+                        items: debugItems,
+                        onBack: function() { Lampa.Controller.toggle('content'); },
+                        _dlHelperProcessed: true
+                    });
+                    return;
+                }
+
                 // Check if this is the "Действие" menu (player action menu)
                 var menuTitle = (params.title || '').toLowerCase();
                 var isActionMenu = menuTitle.indexOf('действие') > -1 ||
