@@ -122,33 +122,104 @@
         }
     }
 
+    // Generate filename based on content type
+    // Movies:  MovieName_2024_720p.mp4
+    // Series:  SeriesName_S01E05_EpisodeName_720p.mp4
+    function getFilename(quality) {
+        var parts = [];
+        var card = null;
+        var pd = null;
+
+        // Get card data
+        try {
+            var a = Lampa.Activity.active();
+            if (a && a.card) card = a.card;
+        } catch (e) {}
+
+        // Get player data
+        try {
+            pd = Lampa.Player.playdata();
+        } catch (e) {}
+
+        // Get title (series name or movie name)
+        var title = '';
+        if (card) {
+            title = card.title || card.name || '';
+        }
+        if (!title && pd && pd.title) {
+            title = pd.title;
+        }
+        if (!title) {
+            var el = document.querySelector('.player-info__name');
+            if (el) title = el.textContent.trim().split(' - ')[0]; // Get series name before " - "
+        }
+        if (title) parts.push(title);
+
+        // Check if it's a series (has season/episode)
+        var season = pd && pd.season;
+        var episode = pd && pd.episode;
+        var isSeries = season || episode;
+
+        if (isSeries) {
+            // Add S01E05 format
+            var se = 'S' + String(season || 1).padStart(2, '0') + 'E' + String(episode || 1).padStart(2, '0');
+            parts.push(se);
+
+            // Try to get episode name
+            var episodeName = '';
+            if (pd && pd.episode_title) {
+                episodeName = pd.episode_title;
+            } else if (pd && pd.name && pd.name !== title) {
+                episodeName = pd.name;
+            } else {
+                // Try to extract from player info (usually "SeriesName - S1E5 - EpisodeName")
+                var el = document.querySelector('.player-info__name');
+                if (el) {
+                    var text = el.textContent.trim();
+                    var match = text.match(/[SsСс]\d+[EeЕе]\d+\s*[-–]\s*(.+)/);
+                    if (match) episodeName = match[1].trim();
+                }
+            }
+            if (episodeName) parts.push(episodeName);
+        } else {
+            // Movie - add year if available
+            var year = card && (card.year || card.release_date);
+            if (year) {
+                if (typeof year === 'string' && year.length > 4) {
+                    year = year.substring(0, 4); // Extract year from date
+                }
+                parts.push(year);
+            }
+        }
+
+        // Add quality
+        if (quality) {
+            parts.push(quality);
+        }
+
+        // Join with underscores and clean up
+        var filename = parts.join('_')
+            .replace(/[<>:"/\\|?*]/g, '') // Remove invalid chars
+            .replace(/\s+/g, '_')          // Replace spaces with underscores
+            .replace(/_+/g, '_')           // Remove double underscores
+            .replace(/^_|_$/g, '');        // Remove leading/trailing underscores
+
+        return filename || 'video';
+    }
+
+    // Simple title for menu display
     function getTitle() {
-        // Try player info (includes episode info)
+        try {
+            var a = Lampa.Activity.active();
+            if (a && a.card) {
+                return a.card.title || a.card.name || 'video';
+            }
+        } catch (e) {}
+
         var el = document.querySelector('.player-info__name');
         if (el && el.textContent.trim()) {
             return el.textContent.trim();
         }
-
-        // Try full player info with season/episode
-        try {
-            var pd = Lampa.Player.playdata();
-            if (pd) {
-                var parts = [];
-                if (pd.title) parts.push(pd.title);
-                if (pd.season) parts.push('S' + pd.season);
-                if (pd.episode) parts.push('E' + pd.episode);
-                if (parts.length) return parts.join(' ');
-            }
-        } catch (e) {}
-
-        // Try activity card
-        try {
-            var a = Lampa.Activity.active();
-            if (a && a.card) {
-                var title = a.card.title || a.card.name;
-                if (title) return title;
-            }
-        } catch (e) {}
 
         return 'video';
     }
@@ -166,13 +237,13 @@
     // Show actions for selected quality
     function showQualityActions(selectedUrl, qualityLabel, videoTitle) {
         var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
-        var safeTitle = videoTitle.replace(/[<>:"/\\|?*]/g, '_') + ' ' + qualityLabel;
+        var filename = getFilename(qualityLabel);
 
         var items = [];
 
         if (androidAvailable) {
-            items.push({ title: 'Open in 1DM', subtitle: safeTitle, id: '1dm' });
-            items.push({ title: 'Open in DVGet', subtitle: safeTitle, id: 'dvget' });
+            items.push({ title: 'Open in 1DM', subtitle: filename + '.mp4', id: '1dm' });
+            items.push({ title: 'Open in DVGet', subtitle: filename + '.mp4', id: 'dvget' });
             items.push({ title: 'Open in External App', subtitle: 'VLC, MX Player...', id: 'external' });
         }
 
@@ -185,15 +256,15 @@
                 Lampa.Select.close();
 
                 if (item.id === '1dm') {
-                    var urlWith1DM = selectedUrl + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
-                    Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: safeTitle }));
-                    Lampa.Noty.show('Opening ' + qualityLabel + ' in 1DM...');
+                    var urlWith1DM = selectedUrl + '#filename=' + encodeURIComponent(filename + '.mp4');
+                    Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('1DM: ' + filename);
                 } else if (item.id === 'dvget') {
-                    var urlWithDV = selectedUrl + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
-                    Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: safeTitle }));
-                    Lampa.Noty.show('Opening ' + qualityLabel + ' in DVGet...');
+                    var urlWithDV = selectedUrl + '#filename=' + encodeURIComponent(filename + '.mp4');
+                    Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('DVGet: ' + filename);
                 } else if (item.id === 'external') {
-                    Lampa.Android.openPlayer(selectedUrl, JSON.stringify({ title: safeTitle }));
+                    Lampa.Android.openPlayer(selectedUrl, JSON.stringify({ title: filename }));
                     Lampa.Noty.show('Opening ' + qualityLabel + '...');
                 } else {
                     copyToClipboard(selectedUrl);
@@ -281,22 +352,20 @@
                     }
                 } else if (item.id === '1dm') {
                     try {
-                        // 1DM supports #filename= fragment for custom filename
-                        var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
-                        var urlWith1DM = url + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
-                        Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: title }));
-                        Lampa.Noty.show('Opening in 1DM...');
+                        var filename = getFilename();
+                        var urlWith1DM = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                        Lampa.Android.openPlayer(urlWith1DM, JSON.stringify({ title: filename }));
+                        Lampa.Noty.show('1DM: ' + filename);
                     } catch (e) {
                         copyToClipboard(url);
                         Lampa.Noty.show('Error: ' + e.message);
                     }
                 } else if (item.id === 'dvget') {
                     try {
-                        // DVGet supports #filename= fragment like 1DM
-                        var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
-                        var urlWithDV = url + '#filename=' + encodeURIComponent(safeTitle + '.mp4');
-                        Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: title }));
-                        Lampa.Noty.show('Opening in DVGet...');
+                        var filename = getFilename();
+                        var urlWithDV = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                        Lampa.Android.openPlayer(urlWithDV, JSON.stringify({ title: filename }));
+                        Lampa.Noty.show('DVGet: ' + filename);
                     } catch (e) {
                         copyToClipboard(url);
                         Lampa.Noty.show('Error: ' + e.message);
