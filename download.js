@@ -830,20 +830,38 @@
                                    menuTitle === 'действие';
 
                 if (isActionMenu) {
-                    // This is the player selection menu - add download option
-                    var streamUrl = params.url || lastStreamUrl;
-                    var streamTitle = lastStreamTitle || 'video';
+                    // Try to get URL from multiple sources
+                    var streamUrl = params.url ||
+                                    params.file ||
+                                    params.stream ||
+                                    lastStreamUrl;
+
+                    // Also try to extract from items (some plugins store URL in item)
+                    if (!streamUrl && params.items.length > 0) {
+                        for (var i = 0; i < params.items.length; i++) {
+                            var item = params.items[i];
+                            if (item.url || item.file || item.stream || item.link) {
+                                streamUrl = item.url || item.file || item.stream || item.link;
+                                break;
+                            }
+                        }
+                    }
+
+                    var streamTitle = lastStreamTitle || params.title || 'video';
 
                     // Add Download option
                     params.items.push({
                         title: '⬇️ Download',
-                        subtitle: streamUrl ? 'Save to device' : 'No URL captured',
+                        subtitle: streamUrl ? 'Save to device' : 'URL: check debug',
                         onSelect: function() {
                             Lampa.Select.close();
                             if (streamUrl) {
                                 showDownloadMenu(streamUrl, streamTitle);
                             } else {
-                                Lampa.Noty.show('URL not found. Try playing first.');
+                                // Show debug info about params
+                                var keys = Object.keys(params).join(', ');
+                                Lampa.Noty.show('No URL. Keys: ' + keys);
+                                console.log('[DLHelper] Action menu params:', params);
                             }
                         }
                     });
