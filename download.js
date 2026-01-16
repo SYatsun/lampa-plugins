@@ -490,6 +490,49 @@
         return parts.filter(function(p) { return p; }).join(' - ').replace(/[<>:"/\\|?*]/g, '') || 'video';
     }
 
+    // Download menu for context menu (without player)
+    function showDownloadMenu(url, title) {
+        var androidAvailable = Lampa.Android && Lampa.Android.openPlayer;
+        var filename = title.replace(/[<>:"/\\|?*]/g, '').trim() || 'video';
+
+        var items = [];
+
+        if (androidAvailable) {
+            items.push({ title: 'Download with 1DM', subtitle: filename + '.mp4', id: '1dm' });
+            items.push({ title: 'Download with DVGet', subtitle: filename + '.mp4', id: 'dvget' });
+            items.push({ title: 'Open in External App', subtitle: 'VLC, MX Player...', id: 'external' });
+        }
+
+        items.push({ title: 'Copy URL', subtitle: 'Manual paste', id: 'copy' });
+
+        Lampa.Select.show({
+            title: 'Download: ' + title.substring(0, 30),
+            items: items,
+            onSelect: function(item) {
+                Lampa.Select.close();
+
+                if (item.id === '1dm') {
+                    var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                    Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('1DM: ' + filename);
+                } else if (item.id === 'dvget') {
+                    var dlUrl = url + '#filename=' + encodeURIComponent(filename + '.mp4');
+                    Lampa.Android.openPlayer(dlUrl, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('DVGet: ' + filename);
+                } else if (item.id === 'external') {
+                    Lampa.Android.openPlayer(url, JSON.stringify({ title: filename }));
+                    Lampa.Noty.show('Opening...');
+                } else {
+                    copyToClipboard(url);
+                    Lampa.Noty.show('URL copied!');
+                }
+            },
+            onBack: function() {
+                Lampa.Controller.toggle('content');
+            }
+        });
+    }
+
     function showMenu() {
         var url = getVideoUrl();
         if (!url) {
@@ -508,13 +551,13 @@
         // Always show quality selector first
         items.push({ title: 'Select Quality', subtitle: 'Choose resolution before download', id: 'quality' });
 
-        // Check if this is a series with multiple episodes
+        // Check if this is a series - show batch option
         var pd = null;
         try { pd = Lampa.Player.playdata(); } catch(e) {}
-        if (pd && pd.season && availableEpisodes.length > 1) {
+        if (pd && pd.season) {
             items.push({
                 title: 'Batch Download',
-                subtitle: availableEpisodes.length + ' episodes available',
+                subtitle: availableEpisodes.length > 0 ? availableEpisodes.length + ' episodes' : 'No episodes captured yet',
                 id: 'batch'
             });
         }
@@ -573,6 +616,10 @@
                             }
                         } catch(e) {}
                     });
+
+                    // Episodes info
+                    debugInfo.push('EPISODES: ' + availableEpisodes.length);
+                    debugInfo.push('QUALITIES: ' + availableQualities.length);
 
                     debugInfo.push('FILENAME: ' + getFilename('720p'));
 
@@ -746,6 +793,111 @@
             console.log('[DLHelper] Online event:', e.type, e.data ? Object.keys(e.data) : 'no data');
             if (e.data) captureEpisodes(e.data);
         });
+
+        // Add download option to context menu (long-press on card)
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type === 'complite' && e.object && e.object.activity) {
+                // Hook into the full card menu
+                var activity = e.object.activity;
+                var card = activity.card;
+                if (card) {
+                    savedCard = card;
+                }
+            }
+        });
+
+        // Hook into context menu for episodes in online sources
+        if (Lampa.ContextMenu) {
+            var originalShow = Lampa.ContextMenu.show;
+            Lampa.ContextMenu.show = function(params) {
+                // Add download option to context menu
+                if (params && params.items) {
+                    var hasUrl = false;
+                    var streamUrl = '';
+                    var streamTitle = '';
+
+                    // Try to get URL from params
+                    if (params.url) {
+                        hasUrl = true;
+                        streamUrl = params.url;
+                        streamTitle = params.title || 'video';
+                    } else if (params.item && params.item.url) {
+                        hasUrl = true;
+                        streamUrl = params.item.url;
+                        streamTitle = params.item.title || params.item.name || 'video';
+                    }
+
+                    if (hasUrl) {
+                        params.items.push({
+                            title: 'Download',
+                            subtitle: 'Open in download manager',
+                            onSelect: function() {
+                                Lampa.ContextMenu.hide();
+                                showDownloadMenu(streamUrl, streamTitle);
+                            }
+                        });
+                    }
+                }
+                return originalShow.call(this, params);
+            };
+        }
+
+        // Intercept Select.show to add download option to episode lists
+        var originalSelectShow = Lampa.Select.show;
+        Lampa.Select.show = function(params) {
+            // Check if this looks like an episode/source list
+            if (params && params.items && Array.isArray(params.items)) {
+                var hasStreams = params.items.some(function(item) {
+                    return item.url || item.file || item.stream;
+                });
+
+                if (hasStreams) {
+                    // Add download option for each item that has URL
+                    params.items.forEach(function(item) {
+                        var streamUrl = item.url || item.file || item.stream;
+                        if (streamUrl && !item._dlHelperProcessed) {
+                            item._dlHelperProcessed = true;
+                            // Store original onSelect
+                            var originalOnSelect = item.onSelect;
+
+                            // Override to add long-press/hold behavior
+                            // For now, add a download all option at the end
+                        }
+                    });
+
+                    // Add "Download All" option at the end if multiple items with URLs
+                    var itemsWithUrls = params.items.filter(function(item) {
+                        return item.url || item.file || item.stream;
+                    });
+
+                    if (itemsWithUrls.length > 1 && !params._dlHelperAdded) {
+                        params._dlHelperAdded = true;
+                        params.items.push({
+                            title: '⬇️ Download All (' + itemsWithUrls.length + ')',
+                            subtitle: 'Open all in download manager',
+                            onSelect: function() {
+                                Lampa.Select.close();
+
+                                // Prepare episodes for batch download
+                                var episodes = itemsWithUrls.map(function(item, idx) {
+                                    return {
+                                        episode: item.episode || idx + 1,
+                                        season: item.season || 1,
+                                        title: item.title || item.name || '',
+                                        url: item.url || item.file || item.stream,
+                                        quality: item.quality || ''
+                                    };
+                                });
+
+                                availableEpisodes = episodes;
+                                showBatchDownload();
+                            }
+                        });
+                    }
+                }
+            }
+            return originalSelectShow.call(this, params);
+        };
 
     }
 
