@@ -481,8 +481,8 @@ p{color:#888;margin-top:20px;}</style>
             return true;
         }
 
-        // Use idmdownload:// scheme - supported by 1DM
-        const schemeUrl = 'idmdownload://' + url;
+        // Use idmdownload: scheme - supported by 1DM (no double slash!)
+        const schemeUrl = 'idmdownload:' + url;
 
         // Method 1: Try iframe (works in Android WebView)
         try {
