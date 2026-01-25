@@ -500,13 +500,20 @@ p{color:#888;margin-top:20px;}</style>
         }
         intentUrl += 'end';
 
-        // Debug: show available Lampa.Android methods
-        if (Lampa.Android) {
-            const methods = Object.keys(Lampa.Android).join(', ');
-            Lampa.Noty.show('Lampa.Android: ' + methods);
-        } else {
-            Lampa.Noty.show('No Lampa.Android');
+        // Use openPlayer with video URL - Android will show app chooser including 1DM
+        if (Lampa.Android?.openPlayer) {
+            try {
+                Lampa.Android.openPlayer(url, JSON.stringify({ title: filename }));
+                Lampa.Noty.show('Choose 1DM from list');
+                return true;
+            } catch (e) {
+                Lampa.Noty.show('openPlayer error: ' + e.message);
+            }
         }
+
+        // Fallback: copy URL
+        copyToClipboard(url);
+        Lampa.Noty.show('URL copied. Open 1DM manually');
         return false;
 
         // Method 2: Try Android global share if available
