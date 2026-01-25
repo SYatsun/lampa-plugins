@@ -481,64 +481,21 @@ p{color:#888;margin-top:20px;}</style>
             return true;
         }
 
-        // Method 1: Try full intent:// URL with S.title for filename
-        // Format: intent:{url}#Intent;package=...;scheme=idmdownload;S.title={filename};end
-        let intentUrl = 'intent:' + url + '#Intent;';
-        intentUrl += 'package=idm.internet.download.manager.plus;';
-        intentUrl += 'scheme=idmdownload;';
-        intentUrl += 'S.extra_filename=' + encodeURIComponent(filename) + ';';
+        // Use idmdownload:// scheme - supported by 1DM
+        const schemeUrl = 'idmdownload://' + url;
 
-        // Add headers if present
-        if (headers) {
-            if (headers['Referer']) {
-                intentUrl += 'S.extra_referer=' + encodeURIComponent(headers['Referer']) + ';';
-            }
-            if (headers['User-Agent']) {
-                intentUrl += 'S.extra_useragent=' + encodeURIComponent(headers['User-Agent']) + ';';
-            }
-            if (headers['Cookie']) {
-                intentUrl += 'S.extra_cookies=' + encodeURIComponent(headers['Cookie']) + ';';
-            }
-        }
-        intentUrl += 'end';
-
-        // Method 1: Try Lampa.Android.openBrowser for intent URL (preferred on Android)
-        if (Lampa.Android?.openBrowser) {
-            try {
-                Lampa.Android.openBrowser(intentUrl);
-                Lampa.Noty.show('Opening 1DM...');
-                return true;
-            } catch (e) {
-                console.log('Intent via openBrowser failed:', e);
-            }
-        }
-
-        // Method 2: Try idmdownload:// URL scheme (fallback, no filename)
-        const schemeUrl = 'idmdownload:' + url;
-
-        if (Lampa.Android?.openBrowser) {
-            try {
-                Lampa.Android.openBrowser(schemeUrl);
-                copyToClipboard(filename);
-                Lampa.Noty.show('Filename copied! Paste in 1DM');
-                return true;
-            } catch (e) {
-                console.log('1DM scheme failed:', e);
-            }
-        }
-
-        // Method 3: Try anchor click (works in some WebViews)
+        // Method 1: Try iframe (works in Android WebView)
         try {
-            const a = document.createElement('a');
-            a.href = intentUrl;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            Lampa.Noty.show('Opening 1DM...');
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = schemeUrl;
+            document.body.appendChild(iframe);
+            setTimeout(() => iframe.remove(), 2000);
+            copyToClipboard(filename);
+            Lampa.Noty.show('Opening 1DM... (filename copied)');
             return true;
         } catch (e) {
-            console.log('Intent anchor click failed:', e);
+            console.log('1DM iframe failed:', e);
         }
 
         // Method 2: Try Android global share if available
