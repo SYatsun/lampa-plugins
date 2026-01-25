@@ -266,14 +266,25 @@
             }
 
             if (Array.isArray(pd.playlist) && pd.playlist.length > 1) {
-                const qualities = pd.playlist
-                    .filter(item => item?.url)
-                    .map((item, i) => ({
-                        url: item.url,
-                        quality: item.quality || item.title || extractQualityFromUrl(item.url) || `Quality ${i + 1}`,
-                        bandwidth: 0
-                    }));
-                if (qualities.length > 1) return qualities;
+                // Check if this is a quality playlist, not an episode list
+                const isEpisodePlaylist = pd.playlist.some(item =>
+                    item?.episode !== undefined ||
+                    item?.season !== undefined ||
+                    item?.seria !== undefined ||
+                    item?.voice !== undefined ||
+                    (item?.title && /^(S\d|E\d|Серия|Episode|Епізод|\d+\s*серия)/i.test(item.title))
+                );
+
+                if (!isEpisodePlaylist) {
+                    const qualities = pd.playlist
+                        .filter(item => item?.url)
+                        .map((item, i) => ({
+                            url: item.url,
+                            quality: item.quality || item.title || extractQualityFromUrl(item.url) || `Quality ${i + 1}`,
+                            bandwidth: 0
+                        }));
+                    if (qualities.length > 1) return qualities;
+                }
             }
         } catch (_) { /* ignore */ }
         return null;
@@ -387,9 +398,125 @@
         return false;
     }
 
+    // ========== 1DM BROWSER TITLE TRICK ==========
+    // Creates a data: URL page with <title> = filename, then opens in browser
+    // 1DM setting: Browser → Advanced → "Use webpage title as filename" must be ON
+    function open1DMBrowserWithTitle(url, filename) {
+        const html = `<!DOCTYPE html>
+<html><head>
+<title>${filename}</title>
+<meta charset="utf-8">
+<style>body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;background:#1a1a1a;color:#fff;}
+a{font-size:24px;color:#4CAF50;padding:20px 40px;border:2px solid #4CAF50;border-radius:10px;text-decoration:none;margin:20px;}
+a:hover{background:#4CAF50;color:#fff;}
+p{color:#888;margin-top:20px;}</style>
+</head><body>
+<h2>${filename}</h2>
+<a href="${url}">⬇️ Download</a>
+<p>1DM: Enable "Use webpage title as filename" in Browser settings</p>
+</body></html>`;
+
+        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+
+        // Try to open in browser (user then opens with 1DM)
+        if (Lampa.Android?.openBrowser) {
+            Lampa.Android.openBrowser(dataUrl);
+            Lampa.Noty.show('Open this page with 1DM Browser');
+            return true;
+        }
+
+        // Fallback: open in new window
+        window.open(dataUrl, '_blank');
+        Lampa.Noty.show('Open with 1DM Browser');
+        return true;
+    }
+
+    // ========== HTTP SHORTCUTS INTEGRATION ==========
+    // Set your HTTP Shortcuts ID here (get it from: long press shortcut → Show Info → Deep-Link URL)
+    const HTTP_SHORTCUTS_ID = Lampa.Storage?.get('ldm_http_shortcuts_id') || '';
+
+    function openHttpShortcuts(url, filename, headers) {
+        if (!HTTP_SHORTCUTS_ID) {
+            Lampa.Noty.show('Set HTTP Shortcuts ID in settings!');
+            return false;
+        }
+
+        // Build deep-link URL with parameters
+        let deepLink = 'http-shortcuts://' + HTTP_SHORTCUTS_ID +
+            '?url=' + encodeURIComponent(url) +
+            '&filename=' + encodeURIComponent(filename);
+
+        // Add headers if present
+        if (headers) {
+            if (headers['Referer']) deepLink += '&referer=' + encodeURIComponent(headers['Referer']);
+            if (headers['User-Agent']) deepLink += '&useragent=' + encodeURIComponent(headers['User-Agent']);
+            if (headers['Cookie']) deepLink += '&cookies=' + encodeURIComponent(headers['Cookie']);
+        }
+
+        if (Lampa.Android?.openBrowser) {
+            try {
+                Lampa.Android.openBrowser(deepLink);
+                Lampa.Noty.show('Opening HTTP Shortcuts...');
+                return true;
+            } catch (e) {
+                console.log('HTTP Shortcuts failed:', e);
+            }
+        }
+
+        // Fallback: try location
+        try {
+            window.location.href = deepLink;
+            return true;
+        } catch (e) {
+            console.log('Deep link failed:', e);
+        }
+
+        return false;
+    }
+
     // ========== 1DM INTENT DOWNLOAD ==========
     function open1DMDownload(url, filename, headers) {
-        // Method 1: Try idmdownload:// URL scheme
+        // Method 0: Try HTTP Shortcuts first (if configured)
+        if (HTTP_SHORTCUTS_ID && openHttpShortcuts(url, filename, headers)) {
+            return true;
+        }
+
+        // Method 1: Try full intent:// URL with S.title for filename
+        // Format: intent:{url}#Intent;package=...;scheme=idmdownload;S.title={filename};end
+        let intentUrl = 'intent:' + url + '#Intent;';
+        intentUrl += 'package=idm.internet.download.manager.plus;';
+        intentUrl += 'scheme=idmdownload;';
+        intentUrl += 'S.extra_filename=' + encodeURIComponent(filename) + ';';
+
+        // Add headers if present
+        if (headers) {
+            if (headers['Referer']) {
+                intentUrl += 'S.extra_referer=' + encodeURIComponent(headers['Referer']) + ';';
+            }
+            if (headers['User-Agent']) {
+                intentUrl += 'S.extra_useragent=' + encodeURIComponent(headers['User-Agent']) + ';';
+            }
+            if (headers['Cookie']) {
+                intentUrl += 'S.extra_cookies=' + encodeURIComponent(headers['Cookie']) + ';';
+            }
+        }
+        intentUrl += 'end';
+
+        // Try to open via anchor click (works in some WebViews)
+        try {
+            const a = document.createElement('a');
+            a.href = intentUrl;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            Lampa.Noty.show('Opening 1DM...');
+            return true;
+        } catch (e) {
+            console.log('Intent anchor click failed:', e);
+        }
+
+        // Method 2: Try idmdownload:// URL scheme (fallback, no filename)
         const schemeUrl = 'idmdownload:' + url;
 
         if (Lampa.Android?.openBrowser) {
@@ -436,6 +563,24 @@
         copyToClipboard(allInfo);
         Lampa.Noty.show('All info copied! Open 1DM manually');
         return false;
+    }
+
+    // ========== SETTINGS ==========
+    function showSettings() {
+        const currentId = Lampa.Storage?.get('ldm_http_shortcuts_id') || '';
+
+        Lampa.Input.edit({
+            title: 'HTTP Shortcuts ID',
+            value: currentId,
+            free: true,
+            nosave: true
+        }, function(newId) {
+            if (newId !== undefined) {
+                Lampa.Storage.set('ldm_http_shortcuts_id', newId.trim());
+                Lampa.Noty.show(newId ? 'ID saved!' : 'ID cleared');
+            }
+            Lampa.Controller.toggle('player');
+        });
     }
 
     // ========== GET FILE SIZE (with cache) ==========
@@ -486,6 +631,7 @@
 
                 // Download manager options
                 items.push({ title: '⬇️ 1DM', subtitle: filename + '.mp4', id: 'download1dm', directUrl, headers });
+                items.push({ title: '🌐 1DM Browser', subtitle: 'Filename via page title', id: 'download1dmbrowser', directUrl });
                 items.push({ title: '⬇️ ADM', subtitle: 'Share → ADM Editor', id: 'downloadadm', directUrl });
                 items.push({ title: 'Copy URL', subtitle: 'For manual download', id: 'copyurl', directUrl });
                 items.push({ title: 'Copy Filename', subtitle: filename + '.mp4', id: 'copyname' });
@@ -498,6 +644,7 @@
 
                 items.push({ title: 'Copy ALL', subtitle: 'URL + Filename + Headers', id: 'copyall', directUrl, headers });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
+                items.push({ title: '⚙️ Settings', subtitle: 'HTTP Shortcuts ID', id: 'settings' });
             } else {
                 // Direct MP4 options
                 items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'dlmanager' });
@@ -517,6 +664,9 @@
                 } else if (item.id === 'download1dm') {
                     const dlUrl = item.directUrl || url;
                     open1DMDownload(dlUrl, filename + '.mp4', item.headers);
+                } else if (item.id === 'download1dmbrowser') {
+                    const dlUrl = item.directUrl || url;
+                    open1DMBrowserWithTitle(dlUrl, filename + '.mp4');
                 } else if (item.id === 'downloadadm') {
                     const dlUrl = item.directUrl || url;
                     // ADM: share URL, copy filename to clipboard
@@ -560,6 +710,9 @@
                     }
                     copyToClipboard(allText);
                     Lampa.Noty.show('All info copied!');
+                } else if (item.id === 'settings') {
+                    showSettings();
+                    return; // Don't toggle controller yet
                 }
                 Lampa.Controller.toggle(returnTo);
             },
