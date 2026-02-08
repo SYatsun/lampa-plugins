@@ -3,17 +3,24 @@
 
     // ========== UTILITIES ==========
     function copyToClipboard(text) {
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(text);
-            return true;
+        function fallbackCopy() {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+            } catch (_) {}
         }
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.cssText = 'position:fixed;opacity:0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
+
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).catch(fallbackCopy);
+        } else {
+            fallbackCopy();
+        }
         return true;
     }
 
