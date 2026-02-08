@@ -3,7 +3,15 @@
 
     // ========== UTILITIES ==========
     function copyToClipboard(text) {
-        function fallbackCopy() {
+        if (Lampa.Utils?.copyTextToClipboard) {
+            Lampa.Utils.copyTextToClipboard(text, function() {}, function() {});
+            return true;
+        }
+
+        // Fallback for environments without Lampa utils
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).catch(function() {});
+        } else {
             try {
                 const ta = document.createElement('textarea');
                 ta.value = text;
@@ -14,12 +22,6 @@
                 document.execCommand('copy');
                 ta.remove();
             } catch (_) {}
-        }
-
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).catch(fallbackCopy);
-        } else {
-            fallbackCopy();
         }
         return true;
     }
