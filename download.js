@@ -661,6 +661,8 @@ p{color:#888;margin-top:20px;}</style>
                 // Direct MP4 options
                 items.push({ title: 'Download (1DM/ADM)', subtitle: filename + '.mp4' + sizeText + subText, id: 'dlmanager' });
                 items.push({ title: 'External Player', subtitle: 'MX Player, VLC', id: 'external' });
+                items.push({ title: 'Copy Filename', subtitle: filename + '.mp4', id: 'copyname' });
+                items.push({ title: 'Copy URL', subtitle: 'For manual download', id: 'copyurl' });
             }
         }
 
@@ -690,6 +692,7 @@ p{color:#888;margin-top:20px;}</style>
                     shareToApp(dlUrl, filename + '.mp4');
                 } else if (item.id === 'dlmanager') {
                     const dlUrl = item.directUrl || url;
+                    copyToClipboard(filename);
                     if (!openExternalDownloader(dlUrl, filename + '.mp4')) {
                         copyForDownload(dlUrl, filename + '.mp4');
                     }
