@@ -2,28 +2,46 @@
     'use strict';
 
     // ========== UTILITIES ==========
-    function copyToClipboard(text) {
+    function copyToClipboard(text, showResult) {
+        function onSuccess() {
+            if (showResult) Lampa.Noty.show('Copied: ' + (text.length > 60 ? text.substring(0, 60) + '...' : text));
+        }
+        function onFail() {
+            if (showResult) Lampa.Noty.show('Copy failed');
+        }
+
+        // Use Lampa's built-in method (textarea + execCommand)
         if (Lampa.Utils?.copyTextToClipboard) {
-            Lampa.Utils.copyTextToClipboard(text, function() {}, function() {});
+            Lampa.Utils.copyTextToClipboard(text, onSuccess, onFail);
             return true;
         }
 
-        // Fallback for environments without Lampa utils
+        // Fallback: try navigator.clipboard first, then textarea
         if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).catch(function() {});
+            navigator.clipboard.writeText(text).then(onSuccess).catch(function() {
+                fallbackExecCommand(text, onSuccess, onFail);
+            });
         } else {
-            try {
-                const ta = document.createElement('textarea');
-                ta.value = text;
-                ta.style.cssText = 'position:fixed;left:-9999px;opacity:0';
-                document.body.appendChild(ta);
-                ta.focus();
-                ta.select();
-                document.execCommand('copy');
-                ta.remove();
-            } catch (_) {}
+            fallbackExecCommand(text, onSuccess, onFail);
         }
         return true;
+    }
+
+    function fallbackExecCommand(text, onSuccess, onFail) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            if (ok && onSuccess) onSuccess();
+            else if (onFail) onFail();
+        } catch (_) {
+            if (onFail) onFail();
+        }
     }
 
     function formatBytes(bytes) {
